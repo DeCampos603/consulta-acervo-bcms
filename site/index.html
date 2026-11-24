@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Sistema institucional de consulta, pesquisa e download de Notas de Empenho (NE), Notas de Crédito (NC), Requisições e Processos Escaneados do BCMS — conectado ao Google Drive privado.">
+  <title>Acervo Digital SIAFI — Consulta de Empenhos e Créditos · BCMS 2026</title>
+  <link rel="icon" type="image/png" href="assets/BCMS.png">
+  <link rel="stylesheet" href="design-tokens.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Pular para o conteúdo principal</a>
+
+  <div class="app-shell">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-logo" src="assets/BCMS.png" alt="Brasão do Batalhão Central de Manutenção e Suprimento" width="48" height="48">
+        <div class="brand-text">
+          <h1>Acervo Digital SIAFI · BCMS 2026</h1>
+          <p>Consulta unificada de Notas de Empenho, Notas de Crédito, Requisições e Processos</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <span id="conn-status-pill" class="status-pill" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="conn-status-text">Desconectado do Drive</span>
+        </span>
+        <button id="btn-lgpd" type="button" class="btn btn-sm" aria-pressed="true" title="Alternar ocultação parcial de CPFs na exibição">
+          CPF Mascarado: ON
+        </button>
+        <button id="btn-theme" type="button" class="btn btn-sm" title="Alternar entre tema escuro e tema claro">
+          Tema Claro
+        </button>
+        <button id="btn-refresh" type="button" class="btn btn-sm hidden" title="Recarregar banco e mapa de PDFs do Drive">
+          Atualizar Base
+        </button>
+        <button id="btn-disconnect" type="button" class="btn btn-sm hidden">
+          Trocar Conexão
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <!-- 1. GATE DE CONEXÃO PRIVADA -->
+      <section id="connect-section" class="card connect-panel" aria-labelledby="connect-heading">
+        <div class="connect-hero">
+          <h2 id="connect-heading">Conexão Privada ao Acervo no Google Drive</h2>
+          <p>Seus PDFs oficiais, processos escaneados e o banco de dados (<span class="code-chip">banco_consulta_bcms.json</span>) ficam protegidos exclusivamente no seu Google Drive, sem exposição no GitHub.</p>
+        </div>
+
+        <div class="security-banner">
+          <span aria-hidden="true">🔒</span>
+          <div>
+            <strong>Proteção de Acesso Ativa:</strong> esta página pública contém apenas a interface de leitura. Nenhum empenho, nota de crédito, empresa ou documento é carregado sem autenticação no seu Drive ou seleção local.
+          </div>
+        </div>
+
+        <div id="local-server-banner" class="local-detected-banner hidden">
+          <div>
+            <strong>Servidor Local Detectado (127.0.0.1)</strong>
+            <span id="local-server-meta">Banco local pronto na pasta Acervo-Empenhos-BCMS-2026.</span>
+          </div>
+          <button id="btn-connect-local-api" type="button" class="btn btn-primary">
+            Abrir Acervo Local Agora
+          </button>
+        </div>
+
+        <div class="mode-tabs" role="tablist" aria-label="Método de conexão com o acervo">
+          <button id="tab-mode-apps" type="button" class="mode-tab" role="tab" aria-selected="true" aria-controls="panel-mode-apps">
+            Google Drive (Apps Script · 2 min)
+          </button>
+          <button id="tab-mode-oauth" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="panel-mode-oauth">
+            Google Drive (OAuth Google)
+          </button>
+          <button id="tab-mode-folder" type="button" class="mode-tab" role="tab" aria-selected="false" aria-controls="panel-mode-folder">
+            Pasta Local no PC (Chrome / Edge)
+          </button>
+        </div>
+
+        <div id="connect-error" class="alert-error hidden" role="alert"></div>
+
+        <!-- Modo Apps Script -->
+        <form id="panel-mode-apps" class="form-stack" role="tabpanel" aria-labelledby="tab-mode-apps">
+          <div class="field">
+            <label for="input-apps-url">URL do Web App (Google Apps Script)</label>
+            <input id="input-apps-url" type="url" autocomplete="url" placeholder="https://script.google.com/macros/s/.../exec" required>
+            <span class="hint">URL terminada em <span class="code-chip">/exec</span> gerada ao implantar o arquivo <span class="code-chip">google-apps-script/Code.gs</span> na sua conta Google.</span>
+          </div>
+          <div class="field">
+            <label for="input-apps-token">Token Secreto de Acesso (ACCESS_TOKEN)</label>
+            <input id="input-apps-token" type="password" autocomplete="current-password" placeholder="Digite o token configurado nas propriedades do Apps Script" required>
+            <span class="hint">Enviado exclusivamente no corpo <span class="code-chip">POST</span> (nunca na URL) para validar o acesso à sua pasta.</span>
+          </div>
+          <label class="checkbox-inline">
+            <input id="chk-remember-apps" type="checkbox" checked>
+            <span>Lembrar URL neste navegador e manter token apenas enquanto a aba estiver aberta</span>
+          </label>
+          <div>
+            <button id="btn-connect-apps" type="submit" class="btn btn-primary">
+              Conectar e Carregar Acervo do Drive
+            </button>
+          </div>
+
+          <details class="guide-details">
+            <summary>Passo a passo rápido para ativar no seu Google Drive (2 minutos)</summary>
+            <ol>
+              <li>No computador, execute <span class="code-chip">atualizar_banco.bat</span> para gerar <span class="code-chip">banco_consulta_bcms.json</span> dentro da pasta <span class="code-chip">Acervo-Empenhos-BCMS-2026</span> sincronizada com o Google Drive.</li>
+              <li>Abra essa pasta no Google Drive Web e copie o <strong>ID da pasta</strong> na barra de endereços (<span class="code-chip">.../folders/&lt;ID_DA_PASTA&gt;</span>).</li>
+              <li>Acesse <a href="https://script.google.com" target="_blank" rel="noopener noreferrer">script.google.com</a>, crie um novo projeto e cole o código de <span class="code-chip">google-apps-script/Code.gs</span>.</li>
+              <li>Em <strong>Configurações do projeto → Propriedades do script</strong>, crie <span class="code-chip">ROOT_FOLDER_ID</span> e <span class="code-chip">ACCESS_TOKEN</span>.</li>
+              <li>Clique em <strong>Implantar → Nova implantação → App da Web</strong> (<em>Executar como: Eu</em> | <em>Quem pode acessar: Qualquer pessoa</em>) e cole a URL <span class="code-chip">/exec</span> acima.</li>
+            </ol>
+          </details>
+        </form>
+
+        <!-- Modo OAuth 2.0 -->
+        <form id="panel-mode-oauth" class="form-stack hidden" role="tabpanel" aria-labelledby="tab-mode-oauth">
+          <div class="field">
+            <label for="input-oauth-client">OAuth 2.0 Client ID (Google Cloud Console)</label>
+            <input id="input-oauth-client" type="text" placeholder="1234567890-abcdef.apps.googleusercontent.com" required>
+            <span class="hint">Origem autorizada em JavaScript para este site: <span id="origin-hint" class="code-chip"></span></span>
+          </div>
+          <div class="field">
+            <label for="input-oauth-folder">ID da Pasta no Google Drive (Acervo-Empenhos-BCMS-2026)</label>
+            <input id="input-oauth-folder" type="text" placeholder="1AbCDefGhIjKlMnOpQrStUvWxYz" required>
+            <span class="hint">Respeita diretamente o compartilhamento ACL da pasta no Google Drive (somente contas com permissão na pasta conseguem baixar os PDFs).</span>
+          </div>
+          <label class="checkbox-inline">
+            <input id="chk-remember-oauth" type="checkbox" checked>
+            <span>Lembrar Client ID e ID da Pasta neste navegador</span>
+          </label>
+          <div>
+            <button id="btn-connect-oauth" type="submit" class="btn btn-primary">
+              Entrar com Google e Abrir Drive
+            </button>
+          </div>
+        </form>
+
+        <!-- Modo Pasta Local -->
+        <div id="panel-mode-folder" class="form-stack hidden" role="tabpanel" aria-labelledby="tab-mode-folder">
+          <p style="margin:0;color:var(--text-secondary);">
+            Selecione diretamente a pasta <span class="code-chip">G:\Meu Drive\REPO\Acervo-Empenhos-BCMS-2026</span> no seu computador. Todos os PDFs são lidos localmente no navegador sem subir nada para a internet.
+          </p>
+          <div>
+            <button id="btn-connect-folder" type="button" class="btn btn-primary">
+              Selecionar Pasta Acervo-Empenhos-BCMS-2026
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. WORKSPACE DE CONSULTA -->
+      <section id="workspace-section" class="workspace hidden" aria-label="Sistema de Consulta de Empenhos e Créditos">
+        <!-- Busca Global e Filtros -->
+        <section class="card search-header-card" aria-labelledby="search-heading">
+          <h2 id="search-heading" class="sr-only">Pesquisa e filtros de Notas de Empenho e Notas de Crédito</h2>
+
+          <div class="omnibox-row">
+            <div class="omnibox-wrap">
+              <svg class="omnibox-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <label for="input-omnibox" class="sr-only">Pesquisar em todos os campos</label>
+              <input
+                id="input-omnibox"
+                class="omnibox-input"
+                type="search"
+                placeholder="Pesquise por empresa, CNPJ/CPF, nº da NE, nº da NC, PI, ND, PTRES, pregão, processo ou descrição do item... (atalho: /)"
+                autocomplete="off"
+              >
+              <button id="btn-clear-search" type="button" class="omnibox-clear hidden" aria-label="Limpar busca">Limpar</button>
+            </div>
+
+            <div class="view-switcher" role="group" aria-label="Tipo de documento">
+              <button type="button" class="view-btn is-active" data-view="todos">
+                Todos <span id="badge-count-all" class="count-badge">0</span>
+              </button>
+              <button type="button" class="view-btn" data-view="ne">
+                Notas de Empenho <span id="badge-count-ne" class="count-badge">0</span>
+              </button>
+              <button type="button" class="view-btn" data-view="nc">
+                Notas de Crédito <span id="badge-count-nc" class="count-badge">0</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="quick-presets" aria-label="Atalhos de consulta rápida">
+            <span class="quick-presets-label">Atalhos:</span>
+            <button type="button" class="preset-btn" data-preset="all">Limpar Tudo</button>
+            <button type="button" class="preset-btn" data-preset="ug160">UG 160329 (OGU)</button>
+            <button type="button" class="preset-btn" data-preset="ug167">UG 167329 (FEx)</button>
+            <button type="button" class="preset-btn" data-preset="com_processo">NEs c/ Processo Escaneado</button>
+            <button type="button" class="preset-btn" data-preset="com_requisicao">NEs c/ Requisição</button>
+            <button type="button" class="preset-btn" data-preset="com_saldo_nc">NCs c/ Saldo Disponível</button>
+            <button type="button" class="preset-btn" data-preset="anuladas">NEs Totalmente Anuladas</button>
+          </div>
+
+          <!-- Filtros Principais -->
+          <div class="filters-grid">
+            <div class="field">
+              <label for="flt-ug">Unidade Gestora (UG)</label>
+              <select id="flt-ug">
+                <option value="">Todas (160329 e 167329)</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="flt-empresa">Empresa / Favorecido (Nome ou CNPJ/CPF)</label>
+              <input id="flt-empresa" type="text" list="dl-empresa" placeholder="Digite ou selecione...">
+              <datalist id="dl-empresa"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="flt-nc">Nota de Crédito (NC)</label>
+              <input id="flt-nc" type="text" list="dl-nc" placeholder="Ex: 2026NC000579">
+              <datalist id="dl-nc"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="flt-pi">Plano Interno (PI ou descrição)</label>
+              <input id="flt-pi" type="text" list="dl-pi" placeholder="Ex: I3DAFUNADOM">
+              <datalist id="dl-pi"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="flt-nd">Natureza da Despesa (ND)</label>
+              <input id="flt-nd" type="text" list="dl-nd" placeholder="Ex: 339030, 339039">
+              <datalist id="dl-nd"></datalist>
+            </div>
+
+            <div class="field">
+              <label for="flt-situacao">Situação (NE / NC)</label>
+              <select id="flt-situacao">
+                <option value="">Todas as situações</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Filtros Avançados SIAFI e Anexos -->
+          <details id="advanced-filters-details" class="guide-details">
+            <summary>Mais Filtros Orçamentários e Documentais (PTRES, Fonte, UGR, Ação, Emitente, Pregão, Subelemento, Datas e Valores)</summary>
+            <div class="filters-grid" style="margin-top: 12px;">
+              <div class="field">
+                <label for="flt-ptres">PTRES</label>
+                <input id="flt-ptres" type="text" list="dl-ptres" placeholder="Ex: 171460">
+                <datalist id="dl-ptres"></datalist>
+              </div>
+              <div class="field">
+                <label for="flt-fonte">Fonte de Recurso</label>
+                <input id="flt-fonte" type="text" list="dl-fonte" placeholder="Ex: 1000000000">
+                <datalist id="dl-fonte"></datalist>
+              </div>
+              <div class="field">
+                <label for="flt-ugr">UGR</label>
+                <input id="flt-ugr" type="text" list="dl-ugr" placeholder="Ex: 160329">
+                <datalist id="dl-ugr"></datalist>
+              </div>
+              <div class="field">
+                <label for="flt-acao">Ação Orçamentária</label>
+                <input id="flt-acao" type="text" list="dl-acao" placeholder="Ex: 2000, 156M">
+                <datalist id="dl-acao"></datalist>
+              </div>
+              <div class="field">
+                <label for="flt-emitente">UG Emitente (Notas de Crédito)</label>
+                <input id="flt-emitente" type="text" list="dl-emitente" placeholder="Ex: 160073">
+                <datalist id="dl-emitente"></datalist>
+              </div>
+              <div class="field">
+                <label for="flt-modalidade">Modalidade de Licitação</label>
+                <select id="flt-modalidade">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="flt-tipo-emp">Tipo de Empenho</label>
+                <select id="flt-tipo-emp">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="flt-pregao">Pregão / Processo</label>
+                <input id="flt-pregao" type="text" list="dl-pregao" placeholder="Ex: 90005/2025">
+                <datalist id="dl-pregao"></datalist>
+              </div>
+              <div class="field">
+                <label for="flt-subelemento">Subelemento da Despesa</label>
+                <input id="flt-subelemento" type="text" list="dl-subelemento" placeholder="Ex: 63, 07, MATERIAL">
+                <datalist id="dl-subelemento"></datalist>
+              </div>
+              <div class="field">
+                <label for="flt-mes">Mês de Emissão (2026)</label>
+                <select id="flt-mes">
+                  <option value="">Todos os meses</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="flt-data-de">Emissão De</label>
+                <input id="flt-data-de" type="date">
+              </div>
+              <div class="field">
+                <label for="flt-data-ate">Emissão Até</label>
+                <input id="flt-data-ate" type="date">
+              </div>
+              <div class="field">
+                <label for="flt-val-min">Valor Mínimo (R$)</label>
+                <input id="flt-val-min" type="text" inputmode="decimal" placeholder="Ex: 1000,00">
+              </div>
+              <div class="field">
+                <label for="flt-val-max">Valor Máximo (R$)</label>
+                <input id="flt-val-max" type="text" inputmode="decimal" placeholder="Ex: 50000,00">
+              </div>
+              <div class="field">
+                <label for="flt-anexo">Disponibilidade de Documentos / Saldo</label>
+                <select id="flt-anexo">
+                  <option value="">Qualquer</option>
+                  <option value="com_pdf">Com PDF Oficial no Drive</option>
+                  <option value="com_processo">Com Processo Escaneado</option>
+                  <option value="com_requisicao">Com Requisição (Inicial/Reforço/Anulação)</option>
+                  <option value="com_saldo_nc">NC com Saldo Disponível &gt; R$ 0,00</option>
+                  <option value="sem_pdf">Sem PDF Oficial Extraído</option>
+                </select>
+              </div>
+            </div>
+          </details>
+
+          <div class="filters-toolbar">
+            <div id="active-chips" class="active-chips" aria-live="polite"></div>
+            <button id="btn-reset-filters" type="button" class="btn btn-sm btn-ghost hidden">
+              Limpar Todos os Filtros
+            </button>
+          </div>
+        </section>
+
+        <!-- Cards KPI -->
+        <section class="kpi-grid" aria-label="Resumo quantitativo e financeiro da consulta">
+          <article class="kpi-card">
+            <span class="kpi-label">Documentos Encontrados</span>
+            <strong id="kpi-qtd-total" class="kpi-value">0</strong>
+            <span id="kpi-qtd-sub" class="kpi-sub">0 NEs · 0 NCs</span>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Valor Líquido Empenhado (NEs)</span>
+            <strong id="kpi-val-empenhado" class="kpi-value">R$ 0,00</strong>
+            <span id="kpi-empresas-sub" class="kpi-sub">0 empresas favorecidas</span>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Créditos Descentralizados (NCs)</span>
+            <strong id="kpi-val-credito" class="kpi-value">R$ 0,00</strong>
+            <span id="kpi-disp-sub" class="kpi-sub">Disponível: R$ 0,00</span>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">Cobertura Documental (PDFs)</span>
+            <strong id="kpi-pdfs" class="kpi-value">0</strong>
+            <span id="kpi-base-meta" class="kpi-sub">Atualizado em —</span>
+          </article>
+        </section>
+
+        <!-- Tabela e Cards Responsivos -->
+        <section class="card results-card" aria-labelledby="results-heading">
+          <div class="results-toolbar">
+            <div class="results-summary">
+              <h2 id="results-heading" style="margin:0;font-size:var(--fs-md);">Resultados da Consulta</h2>
+              <span id="results-count-label" style="color:var(--text-muted);">—</span>
+            </div>
+
+            <div class="results-actions">
+              <label for="sort-select" class="sr-only">Ordenar resultados</label>
+              <select id="sort-select" class="sort-select">
+                <option value="date_desc">Mais recentes primeiro</option>
+                <option value="date_asc">Mais antigos primeiro</option>
+                <option value="val_desc">Maior valor primeiro</option>
+                <option value="val_asc">Menor valor primeiro</option>
+                <option value="key_asc">Número crescente (NE/NC)</option>
+                <option value="key_desc">Número decrescente (NE/NC)</option>
+                <option value="entity_asc">Empresa / Emitente (A–Z)</option>
+              </select>
+
+              <button id="btn-download-zip" type="button" class="btn btn-sm btn-emerald" disabled>
+                Baixar Selecionados (.ZIP) <span id="selected-count-badge">(0)</span>
+              </button>
+              <button id="btn-export-csv" type="button" class="btn btn-sm">
+                Exportar CSV
+              </button>
+            </div>
+          </div>
+
+          <div id="batch-progress" class="batch-progress hidden" aria-live="polite">
+            <span id="batch-progress-text">Preparando download...</span>
+          </div>
+
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width:40px;">
+                    <input id="chk-select-all" class="row-check" type="checkbox" aria-label="Selecionar todos os documentos visíveis nesta página">
+                  </th>
+                  <th>Documento</th>
+                  <th>Emissão / UG</th>
+                  <th>Favorecido (NE) ou Emitente (NC)</th>
+                  <th>Classificação (PI · ND · PTRES)</th>
+                  <th>Vínculo &amp; Situação</th>
+                  <th style="text-align:right;">Valor</th>
+                  <th style="width:170px;">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="results-tbody"></tbody>
+            </table>
+          </div>
+
+          <div id="mobile-cards" class="mobile-cards"></div>
+
+          <div id="empty-state" class="empty-state hidden">
+            <strong>Nenhum documento corresponde aos filtros aplicados.</strong>
+            <span>Tente remover algum filtro, ampliar o período ou pesquisar apenas pelo número parcial ou nome da empresa.</span>
+            <button id="btn-empty-reset" type="button" class="btn btn-primary btn-sm">Limpar Filtros</button>
+          </div>
+
+          <div class="pagination-bar">
+            <div class="pagination-controls">
+              <label for="page-size-select" style="font-size:var(--fs-xs);color:var(--text-muted);font-weight:600;">Por página:</label>
+              <select id="page-size-select" class="sort-select">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="9999">Todos</option>
+              </select>
+            </div>
+            <div class="pagination-controls">
+              <button id="btn-prev-page" type="button" class="btn btn-sm">Anterior</button>
+              <span id="page-indicator" class="mono" style="font-size:var(--fs-xs);color:var(--text-secondary);">Página 1 de 1</span>
+              <button id="btn-next-page" type="button" class="btn btn-sm">Próxima</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      Batalhão Central de Manutenção e Suprimento (BCMS · UGs 160329 / 167329) · Consulta Digital SIAFI 2026 · Documentos privados no Google Drive
+    </footer>
+  </div>
+
+  <!-- MODAL SPLIT-VIEW DO DOCUMENTO + VISUALIZADOR PDF -->
+  <div id="doc-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-shell">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span id="modal-badge-kind" class="badge badge-ne">NE</span>
+          <h2 id="modal-title" class="mono">2026NE000001</h2>
+          <span id="modal-badge-status" class="badge badge-ok">—</span>
+        </div>
+        <div class="modal-header-actions">
+          <button id="btn-modal-copy" type="button" class="btn btn-sm">Copiar Resumo</button>
+          <button id="btn-modal-close" type="button" class="btn btn-sm btn-primary" aria-label="Fechar janela (Esc)">Fechar (Esc)</button>
+        </div>
+      </div>
+
+      <div class="modal-body-split">
+        <div id="modal-details-pane" class="modal-details-pane"></div>
+
+        <div id="modal-pdf-pane" class="modal-pdf-pane">
+          <div class="pdf-toolbar">
+            <div id="pdf-doc-tabs" class="pdf-tabs" role="tablist" aria-label="Documentos anexos disponíveis"></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button id="btn-pdf-open-tab" type="button" class="btn btn-sm" disabled>Abrir Aba</button>
+              <button id="btn-pdf-download" type="button" class="btn btn-sm btn-emerald" disabled>Baixar PDF</button>
+            </div>
+          </div>
+          <div id="pdf-viewer-stage" class="pdf-viewer-stage">
+            <div class="pdf-placeholder">Selecione um documento para visualizar.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

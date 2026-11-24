@@ -1,0 +1,45 @@
+name: Publicar Consulta Acervo BCMS no GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório (somente código estático)
+        uses: actions/checkout@v4
+
+      - name: Verificar ausência de dados sensíveis ou PDFs em site/
+        run: |
+          if find site -type f \( -iname "*.pdf" -o -name "banco_consulta_bcms.json" -o -name "drive_file_map.json" \) | grep -q .; then
+            echo "ERRO DE SEGURANÇA: Arquivo restrito encontrado em site/!"
+            exit 1
+          fi
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empacotar pasta site/
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

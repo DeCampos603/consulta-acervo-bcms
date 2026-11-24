@@ -1,0 +1,141 @@
+/* ==========================================================================
+   DESIGN TOKENS — ACERVO DIGITAL SIAFI (BCMS 2026)
+   Padrão institucional SICOF / Figma One-X · WCAG 2.2 AA/AAA · 60fps GPU
+   ========================================================================== */
+
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Consolas, monospace;
+
+  --fs-xs: clamp(0.75rem, 0.72rem + 0.12vw, 0.8125rem);
+  --fs-sm: clamp(0.8125rem, 0.78rem + 0.15vw, 0.875rem);
+  --fs-base: clamp(0.875rem, 0.84rem + 0.18vw, 0.9375rem);
+  --fs-md: clamp(0.9375rem, 0.9rem + 0.22vw, 1.0625rem);
+  --fs-lg: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  --fs-xl: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
+  --fs-2xl: clamp(1.4rem, 1.25rem + 0.8vw, 1.875rem);
+
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.25rem;
+  --sp-6: 1.5rem;
+  --sp-8: 2rem;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-pill: 9999px;
+
+  --tr-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --tr-smooth: 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Tema Escuro Executivo (Padrão) */
+html[data-theme="dark"],
+:root:not([data-theme="light"]) {
+  color-scheme: dark;
+
+  --bg-canvas: #0b0f19;
+  --bg-card: #111827;
+  --bg-card-hover: #172236;
+  --bg-surface: #1b263b;
+  --bg-input: #0f172a;
+  --bg-row-alt: #131c2e;
+  --bg-subtle: rgba(255, 255, 255, 0.04);
+
+  --border-default: #233046;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-focus: #60a5fa;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+
+  --accent-blue: #2563eb;
+  --accent-blue-hover: #1d4ed8;
+  --accent-blue-solid: #1d4ed8;
+  --accent-blue-text: #93c5fd;
+  --accent-blue-bg: rgba(59, 130, 246, 0.14);
+  --accent-blue-border: rgba(59, 130, 246, 0.38);
+
+  --accent-emerald: #047857;
+  --accent-emerald-text: #6ee7b7;
+  --accent-emerald-bg: rgba(16, 185, 129, 0.14);
+  --accent-emerald-border: rgba(16, 185, 129, 0.4);
+
+  --accent-amber: #f59e0b;
+  --accent-amber-text: #fcd34d;
+  --accent-amber-bg: rgba(245, 158, 11, 0.14);
+  --accent-amber-border: rgba(245, 158, 11, 0.4);
+
+  --accent-purple: #8b5cf6;
+  --accent-purple-text: #c4b5fd;
+  --accent-purple-bg: rgba(139, 92, 246, 0.14);
+  --accent-purple-border: rgba(139, 92, 246, 0.4);
+
+  --accent-rose: #ef4444;
+  --accent-rose-text: #fca5a5;
+  --accent-rose-bg: rgba(239, 68, 68, 0.14);
+  --accent-rose-border: rgba(239, 68, 68, 0.4);
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.65);
+}
+
+/* Tema Claro de Alto Contraste (WCAG AAA >= 7:1) */
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-canvas: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-surface: #e2e8f0;
+  --bg-input: #ffffff;
+  --bg-row-alt: #f8fafc;
+  --bg-subtle: rgba(15, 23, 42, 0.04);
+
+  --border-default: #cbd5e1;
+  --border-subtle: #e2e8f0;
+  --border-strong: #94a3b8;
+  --border-focus: #1d4ed8;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #475569;
+
+  --accent-blue: #1d4ed8;
+  --accent-blue-hover: #1e40af;
+  --accent-blue-solid: #1d4ed8;
+  --accent-blue-text: #1e40af;
+  --accent-blue-bg: #dbeafe;
+  --accent-blue-border: #93c5fd;
+
+  --accent-emerald: #047857;
+  --accent-emerald-text: #065f46;
+  --accent-emerald-bg: #d1fae5;
+  --accent-emerald-border: #6ee7b7;
+
+  --accent-amber: #b45309;
+  --accent-amber-text: #92400e;
+  --accent-amber-bg: #fef3c7;
+  --accent-amber-border: #fcd34d;
+
+  --accent-purple: #6d28d9;
+  --accent-purple-text: #5b21b6;
+  --accent-purple-bg: #ede9fe;
+  --accent-purple-border: #c4b5fd;
+
+  --accent-rose: #b91c1c;
+  --accent-rose-text: #991b1b;
+  --accent-rose-bg: #fee2e2;
+  --accent-rose-border: #fca5a5;
+
+  --shadow-sm: 0 1px 4px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 6px 18px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 18px 42px rgba(15, 23, 42, 0.18);
+}

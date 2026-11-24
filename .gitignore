@@ -1,0 +1,43 @@
+# Proteção rigorosa: ZERO documentos, planilhas ou dados reais no Git/GitHub
+*.pdf
+*.PDF
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.zip
+*.rar
+*.db
+*.sqlite
+*.sqlite3
+
+# Bancos de dados e mapas gerados localmente/Drive
+banco_consulta_bcms.json
+drive_file_map.json
+*.tmp
+dados/
+data/
+acervo/
+anexos/
+
+# Segredos e variáveis de ambiente
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+client_secret*.json
+credentials*.json
+token*.json
+
+# Python / Testes / Sistema
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+desktop.ini
+Thumbs.db
+.DS_Store

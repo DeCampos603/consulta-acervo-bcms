@@ -1,0 +1,118 @@
+# -*- coding: utf-8 -*-
+"""Testes automatizados do gerador de banco, servidor local e guarda de segurança Git."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+PROJETO = Path(__file__).resolve().parent.parent
+SCRIPTS = PROJETO / "scripts"
+SITE = PROJETO / "site"
+ACERVO = PROJETO.parent / "Acervo-Empenhos-BCMS-2026"
+BANCO_PATH = ACERVO / "banco_consulta_bcms.json"
+
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from gerar_banco_consulta import (  # noqa: E402
+    classificar_favorecido_doc,
+    normalizar_tipo_empenho,
+    parse_data_iso,
+    to_centavos,
+)
+from servidor_local import resolver_pdf_seguro  # noqa: E402
+
+
+def test_to_centavos_precisao():
+    assert to_centavos("1.234,56") == 123456
+    assert to_centavos("R$ 699,99") == 69999
+    assert to_centavos("6899.99") == 689999
+    assert to_centavos("-54.88") == -5488
+    assert to_centavos(None) == 0
+    assert to_centavos("") == 0
+    assert to_centavos("0,00") == 0
+
+
+def test_normalizacoes():
+    assert normalizar_tipo_empenho("1.0") == "Ordinário"
+    assert normalizar_tipo_empenho("5.0") == "Global"
+    assert normalizar_tipo_empenho("3") == "Estimativo"
+    assert parse_data_iso("24/11/2026") == "2026-11-24"
+
+    t1, d1, f1 = classificar_favorecido_doc("12.388.737/0001-02")
+    assert (t1, d1, f1) == ("CNPJ", "12388737000102", "12.388.737/0001-02")
+
+    t2, d2, f2 = classificar_favorecido_doc("12345678901")
+    assert (t2, d2, f2) == ("CPF", "12345678901", "123.456.789-01")
+
+    t3, d3, f3 = classificar_favorecido_doc("115406")
+    assert (t3, d3, f3) == ("UG", "115406", "115406")
+
+
+def test_site_nao_contem_documentos_ou_dados_sensiveis():
+    proibidos = []
+    for f in SITE.rglob("*"):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() in {".pdf", ".xlsx", ".xls", ".csv", ".zip", ".db", ".sqlite"}:
+            proibidos.append(str(f))
+        if f.name in {"banco_consulta_bcms.json", "drive_file_map.json"}:
+            proibidos.append(str(f))
+    assert proibidos == [], f"Arquivos restritos dentro de site/: {proibidos}"
+
+
+@pytest.mark.skipif(not BANCO_PATH.is_file(), reason="Banco real não presente neste ambiente")
+def test_integridade_banco_gerado():
+    banco = json.loads(BANCO_PATH.read_text(encoding="utf-8"))
+    meta = banco["meta"]
+    tot = meta["totais"]
+    assert tot["qtd_nes"] == len(banco["empenhos"]) == 488
+    assert tot["qtd_ncs"] == len(banco["creditos"]) == 400
+    assert tot["qtd_ncs_com_pdf"] == 400
+    assert tot["qtd_nes_com_pdf"] >= 469
+
+    # Todos os campos em centavos devem ser inteiros estritos e caminhos devem existir no Drive local
+    for ne in banco["empenhos"]:
+        for campo in (
+            "valor_atual_c",
+            "valor_incluido_c",
+            "valor_reforcado_c",
+            "valor_anulado_c",
+        ):
+            assert isinstance(ne[campo], int)
+        for doc in ne["documentos"]:
+            rel = doc["caminho_relativo"]
+            assert "\\" not in rel and ":" not in rel and not rel.startswith("/")
+            assert (ACERVO / rel).is_file(), f"PDF ausente: {rel}"
+
+    for nc in banco["creditos"]:
+        for campo in (
+            "valor_total_c",
+            "valor_bcms_c",
+            "valor_provisionado_c",
+            "valor_empenhado_c",
+            "valor_disponivel_c",
+        ):
+            assert isinstance(nc[campo], int)
+        for doc in nc["documentos"]:
+            rel = doc["caminho_relativo"]
+            assert (ACERVO / rel).is_file(), f"PDF NC ausente: {rel}"
+
+
+@pytest.mark.skipif(not ACERVO.is_dir(), reason="Pasta do acervo não presente neste ambiente")
+def test_resolver_pdf_seguro_bloqueia_traversal():
+    assert resolver_pdf_seguro(ACERVO, "../Consulta-Acervo-BCMS/README.md") is None
+    assert resolver_pdf_seguro(ACERVO, "banco_consulta_bcms.json") is None
+    assert resolver_pdf_seguro(ACERVO, "AUDITORIA/Auditoria_Empenhos_2026.pdf") is None
+
+    banco = json.loads(BANCO_PATH.read_text(encoding="utf-8"))
+    ne_com_pdf = next(n for n in banco["empenhos"] if n["documentos"])
+    nc_com_pdf = next(c for c in banco["creditos"] if c["documentos"])
+    p_ne = resolver_pdf_seguro(ACERVO, ne_com_pdf["documentos"][0]["caminho_relativo"])
+    p_nc = resolver_pdf_seguro(ACERVO, nc_com_pdf["documentos"][0]["caminho_relativo"])
+    assert p_ne is not None and p_ne.read_bytes().startswith(b"%PDF-")
+    assert p_nc is not None and p_nc.read_bytes().startswith(b"%PDF-")
