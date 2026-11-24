@@ -1,5 +1,7 @@
 import {
   APP_PUBLIC_CONFIG,
+  decodeAccessPayload,
+  encodeAccessPayload,
   escapeHtml,
   formatBRL,
   formatBytes,
@@ -20,6 +22,7 @@ import { buildZipBlob } from "./zip-writer.js";
 const STORAGE_KEYS = {
   theme: "bcms_consulta_theme",
   appsUrl: "bcms_apps_url",
+  appsUrlSession: "bcms_apps_url_session",
   appsTokenSession: "bcms_apps_token_session",
   oauthClient: "bcms_oauth_client",
   oauthFolder: "bcms_oauth_folder",
@@ -99,6 +102,10 @@ function switchConnectMode(mode) {
 function setConnectedUI(connected, statusLabel = "") {
   $("connect-section").classList.toggle("hidden", connected);
   $("workspace-section").classList.toggle("hidden", !connected);
+  $("btn-share-link").classList.toggle(
+    "hidden",
+    !(connected && state.provider?.id === "apps_script")
+  );
   $("btn-refresh").classList.toggle("hidden", !connected);
   $("btn-disconnect").classList.toggle("hidden", !connected);
   const pill = $("conn-status-pill");
@@ -1063,11 +1070,13 @@ function wireEvents() {
     if ($("chk-remember-apps").checked) {
       try {
         localStorage.setItem(STORAGE_KEYS.appsUrl, url);
+        sessionStorage.setItem(STORAGE_KEYS.appsUrlSession, url);
         sessionStorage.setItem(STORAGE_KEYS.appsTokenSession, token);
       } catch {}
     } else {
       try {
         localStorage.removeItem(STORAGE_KEYS.appsUrl);
+        sessionStorage.removeItem(STORAGE_KEYS.appsUrlSession);
         sessionStorage.removeItem(STORAGE_KEYS.appsTokenSession);
       } catch {}
     }
@@ -1112,10 +1121,29 @@ function wireEvents() {
     }
   });
 
+  $("btn-share-link").addEventListener("click", async () => {
+    if (!state.provider || state.provider.id !== "apps_script") return;
+    const encoded = encodeAccessPayload(state.provider.url, state.provider.token);
+    const shareUrl = `${window.location.origin}${window.location.pathname}#acesso=${encoded}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast(
+        "Link direto de 1 clique copiado! Cole no grupo do batalhão. Quem não tiver este link não consegue acessar.",
+        5500
+      );
+    } catch {
+      window.prompt("Copie o link direto para o grupo do batalhão:", shareUrl);
+    }
+  });
+
   $("btn-disconnect").addEventListener("click", () => {
     state.provider = null;
     state.database = null;
     state.index = null;
+    try {
+      sessionStorage.removeItem(STORAGE_KEYS.appsUrlSession);
+      sessionStorage.removeItem(STORAGE_KEYS.appsTokenSession);
+    } catch {}
     setConnectedUI(false);
     closeDocumentModal();
   });
@@ -1349,17 +1377,54 @@ async function bootstrap() {
   wireEvents();
   $("origin-hint").textContent = window.location.origin;
 
-  // Preencher preferências públicas opcionais
+  // 1. Verificar link direto de acesso (#acesso=...) antes de qualquer coisa
+  const magicPayload = decodeAccessPayload(window.location.hash);
+  if (magicPayload) {
+    try {
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search
+      );
+      sessionStorage.setItem(STORAGE_KEYS.appsUrlSession, magicPayload.u);
+      sessionStorage.setItem(STORAGE_KEYS.appsTokenSession, magicPayload.t);
+    } catch {}
+    await connectWithProvider(
+      new AppsScriptProvider(magicPayload.u, magicPayload.t),
+      $("btn-connect-apps")
+    );
+    return;
+  }
+
+  // Preencher preferências públicas opcionais / sessão ativa
+  let sessionUrl = "";
+  let sessionToken = "";
   try {
-    const savedAppsUrl = localStorage.getItem(STORAGE_KEYS.appsUrl) || APP_PUBLIC_CONFIG.defaultAppsScriptUrl;
-    const savedToken = sessionStorage.getItem(STORAGE_KEYS.appsTokenSession) || "";
-    const savedClient = localStorage.getItem(STORAGE_KEYS.oauthClient) || APP_PUBLIC_CONFIG.defaultOAuthClientId;
-    const savedFolder = localStorage.getItem(STORAGE_KEYS.oauthFolder) || APP_PUBLIC_CONFIG.defaultDriveFolderId;
+    sessionUrl = sessionStorage.getItem(STORAGE_KEYS.appsUrlSession) || "";
+    sessionToken = sessionStorage.getItem(STORAGE_KEYS.appsTokenSession) || "";
+    const savedAppsUrl =
+      sessionUrl ||
+      localStorage.getItem(STORAGE_KEYS.appsUrl) ||
+      APP_PUBLIC_CONFIG.defaultAppsScriptUrl;
+    const savedClient =
+      localStorage.getItem(STORAGE_KEYS.oauthClient) ||
+      APP_PUBLIC_CONFIG.defaultOAuthClientId;
+    const savedFolder =
+      localStorage.getItem(STORAGE_KEYS.oauthFolder) ||
+      APP_PUBLIC_CONFIG.defaultDriveFolderId;
     if (savedAppsUrl) $("input-apps-url").value = savedAppsUrl;
-    if (savedToken) $("input-apps-token").value = savedToken;
+    if (sessionToken) $("input-apps-token").value = sessionToken;
     if (savedClient) $("input-oauth-client").value = savedClient;
     if (savedFolder) $("input-oauth-folder").value = savedFolder;
   } catch {}
+
+  if (sessionUrl && sessionToken) {
+    await connectWithProvider(
+      new AppsScriptProvider(sessionUrl, sessionToken),
+      $("btn-connect-apps")
+    );
+    return;
+  }
 
   // Detectar servidor local automaticamente na porta padrão (8765) ou ?local=1
   const host = window.location.hostname;

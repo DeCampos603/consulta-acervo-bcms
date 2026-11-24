@@ -33,6 +33,7 @@ Sistema institucional de consulta, pesquisa combinada, auditoria cruzada e downl
    - **Executar como:** `Eu (sua conta)`
    - **Quem pode acessar:** `Qualquer pessoa` *(o acesso aos dados é bloqueado pelo `ACCESS_TOKEN` validado via `POST` em tempo constante e restrito às subpastas do acervo)*
 7. Copie a **URL do App da Web** (`https://script.google.com/macros/s/.../exec`), abra o sistema no GitHub Pages, cole a URL e o `ACCESS_TOKEN` e clique em **Conectar**.
+8. **Para compartilhar com o grupo do batalhão (acesso em 1 clique):** já conectado, clique em **Copiar Link p/ Grupo** na barra superior e cole no grupo. Quem clicar entra direto no acervo (sem digitar URL nem senha); quem acessar a página raiz sem esse link vê apenas a tela de bloqueio vazia. Para revogar o acesso a qualquer momento, basta alterar `ACCESS_TOKEN` nas *Propriedades do script* no Apps Script e gerar um novo link.
 
 ---
 

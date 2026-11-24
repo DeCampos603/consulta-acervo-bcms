@@ -88,3 +88,43 @@ export function triggerBlobDownload(blob, filename) {
     a.remove();
   }, 1500);
 }
+
+export function encodeAccessPayload(url, token) {
+  const u = String(url || "").trim();
+  const t = String(token || "").trim();
+  const jsonBytes = new TextEncoder().encode(JSON.stringify({ u, t }));
+  let bin = "";
+  for (let i = 0; i < jsonBytes.length; i++) {
+    bin += String.fromCharCode(jsonBytes[i]);
+  }
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function decodeAccessPayload(hashString) {
+  const rawHash = String(hashString || "").trim().replace(/^#/, "");
+  if (!rawHash) return null;
+  const params = new URLSearchParams(rawHash);
+  const encoded = params.get("acesso") || (rawHash.startsWith("acesso=") ? rawHash.slice(7) : "");
+  if (!encoded) return null;
+  try {
+    let b64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4 !== 0) b64 += "=";
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      bytes[i] = bin.charCodeAt(i);
+    }
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    if (!parsed || typeof parsed.u !== "string" || typeof parsed.t !== "string") {
+      return null;
+    }
+    const u = parsed.u.trim();
+    const t = parsed.t.trim();
+    if (!u.startsWith("https://script.google.com/") || !t) {
+      return null;
+    }
+    return { u, t };
+  } catch {
+    return null;
+  }
+}
