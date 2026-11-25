@@ -96,13 +96,15 @@ function doPost(e) {
         });
       }
       var databaseJson = JSON.parse(db.getBlob().getDataAsString("UTF-8"));
+      var restrictedMap = buildRestrictedMap_(databaseJson);
       var mapData = loadOrBuildMap_(rootFolder, Boolean(req.forceRefresh));
+      var safeFileMap = filterSafeFileMap_(mapData.files || {}, restrictedMap);
       return jsonOut_({
         ok: true,
         pasta: rootFolder.getName(),
         atualizado_em: db.getLastUpdated().toISOString(),
         database: databaseJson,
-        fileMap: mapData.files,
+        fileMap: safeFileMap,
         mapUpdatedAt: mapData.updatedAt
       });
     }
@@ -122,20 +124,40 @@ function doPost(e) {
       var targetId = String(req.fileId || "");
 
       // Lista branca estrita: só libera arquivos catalogados dentro das subpastas autorizadas
-      var entry = resolveAuthorizedEntry_(mapStore.files || {}, relPath, targetId);
-      if (!entry) {
+      var resolved = resolveAuthorizedEntry_(mapStore.files || {}, relPath, targetId);
+      if (!resolved) {
         // Tenta reconstruir o mapa caso seja um PDF recém-adicionado no Drive
         mapStore = loadOrBuildMap_(rootFolder, true);
-        entry = resolveAuthorizedEntry_(mapStore.files || {}, relPath, targetId);
+        resolved = resolveAuthorizedEntry_(mapStore.files || {}, relPath, targetId);
       }
-      if (!entry) {
+      if (!resolved) {
         return jsonOut_({
           ok: false,
           error: "Documento não encontrado ou fora das pastas autorizadas do acervo."
         });
       }
 
+      var dbForCheck = findSingleFile_(rootFolder, DB_FILENAME);
+      var restrictedSet = {};
+      if (dbForCheck) {
+        var dbJsonCheck = JSON.parse(dbForCheck.getBlob().getDataAsString("UTF-8"));
+        restrictedSet = buildRestrictedMap_(dbJsonCheck);
+      }
+      if (isRestrictedPdf_(resolved.relPath, resolved.relPath.split("/").pop(), restrictedSet)) {
+        return jsonOut_({
+          ok: false,
+          error: "Documento restrito pela LGPD (pagamento direto a militar)."
+        });
+      }
+
+      var entry = resolved.entry;
       var file = DriveApp.getFileById(entry.id);
+      if (isRestrictedPdf_(resolved.relPath, file.getName(), restrictedSet)) {
+        return jsonOut_({
+          ok: false,
+          error: "Documento restrito pela LGPD (pagamento direto a militar)."
+        });
+      }
       var size = file.getSize();
       if (size > MAX_BASE64_BYTES) {
         return jsonOut_({
@@ -191,17 +213,68 @@ function findSingleFile_(folder, name) {
 
 function resolveAuthorizedEntry_(filesMap, relPath, targetId) {
   if (relPath && filesMap[relPath]) {
-    return filesMap[relPath];
+    return { relPath: relPath, entry: filesMap[relPath] };
   }
   if (targetId) {
     var keys = Object.keys(filesMap);
     for (var i = 0; i < keys.length; i++) {
       if (filesMap[keys[i]].id === targetId) {
-        return filesMap[keys[i]];
+        return { relPath: keys[i], entry: filesMap[keys[i]] };
       }
     }
   }
   return null;
+}
+
+function buildRestrictedMap_(databaseJson) {
+  var map = {};
+  var list = (databaseJson && databaseJson.meta && databaseJson.meta.chaves_restritas_lgpd) || [];
+  for (var i = 0; i < list.length; i++) {
+    map[String(list[i]).toUpperCase()] = true;
+  }
+  return map;
+}
+
+function isRestrictedPdf_(relPath, fileName, restrictedMap) {
+  var name = String(fileName || "");
+  var rel = String(relPath || "");
+  // 1. Bloqueio direto por padrão de CPF (11 dígitos) no nome do arquivo de NE
+  if (/^NE_\d{6}_\d{4}NE\d{6}_v\d+_\d{11}_/i.test(name)) {
+    return true;
+  }
+  // 2. Bloqueio via chaves restritas (NE oficial, Requisição, Empenho GVA)
+  var mNe = (rel + " " + name).match(/(160329|167329)_(\d{4}NE\d{6})/i);
+  if (mNe && restrictedMap[(mNe[1] + ":" + mNe[2]).toUpperCase()]) {
+    return true;
+  }
+  // 3. Bloqueio via Processo Escaneado (pasta 160/167 + NE_<num>)
+  var mProc = rel.match(/^PROCESSOS ESCANEADOS 2026\/(160|167)[^\/]*\/.*NE_(\d+)/i);
+  if (mProc) {
+    var ugProc = mProc[1] + "329";
+    var numPad = ("000000" + parseInt(mProc[2], 10)).slice(-6);
+    if (restrictedMap[(ugProc + ":2026NE" + numPad).toUpperCase()]) {
+      return true;
+    }
+  }
+  // 4. Bloqueio de NC nominativa com CPF
+  var mNc = name.match(/^NC_(\d{6})_(\d{4}NC\d{6})_/i);
+  if (mNc && restrictedMap[(mNc[1] + ":" + mNc[2]).toUpperCase()]) {
+    return true;
+  }
+  return false;
+}
+
+function filterSafeFileMap_(filesMap, restrictedMap) {
+  var out = {};
+  var keys = Object.keys(filesMap || {});
+  for (var i = 0; i < keys.length; i++) {
+    var rel = keys[i];
+    var fileName = rel.split("/").pop();
+    if (!isRestrictedPdf_(rel, fileName, restrictedMap)) {
+      out[rel] = filesMap[rel];
+    }
+  }
+  return out;
 }
 
 function loadOrBuildMap_(rootFolder, forceRefresh) {

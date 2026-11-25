@@ -281,6 +281,13 @@ function recomputeAndRender() {
   renderResults();
 }
 
+function formatValorLgpd(centavos, sigiloLgpd) {
+  if (sigiloLgpd || centavos === null || centavos === undefined) {
+    return "Oculto (LGPD)";
+  }
+  return formatBRL(centavos);
+}
+
 function renderKPIs() {
   const { kpis } = state.filtered;
   const meta = state.database?.meta || {};
@@ -289,11 +296,16 @@ function renderKPIs() {
   $("badge-count-nc").textContent = String(kpis.qtdNcs);
 
   $("kpi-qtd-total").textContent = String(kpis.qtdTotal);
-  $("kpi-qtd-sub").textContent = `${kpis.qtdNes} NE(s) · ${kpis.qtdNcs} NC(s)`;
+  $("kpi-qtd-sub").textContent = `${kpis.qtdNes} NE(s) · ${kpis.qtdNcs} NC(s)` +
+    (kpis.qtdSigiloLgpd > 0 ? ` · ${kpis.qtdSigiloLgpd} em sigilo LGPD` : "");
   $("kpi-val-empenhado").textContent = formatBRL(kpis.totalEmpenhadoC);
-  $("kpi-empresas-sub").textContent = `${kpis.empresasUnicas} favorecido(s) distinto(s)`;
+  $("kpi-empresas-sub").textContent =
+    `${kpis.empresasUnicas} empresa(s) pública(s)` +
+    (kpis.qtdNesSigiloLgpd > 0 ? ` · ${kpis.qtdNesSigiloLgpd} NE(s) CPF ocultas` : "");
   $("kpi-val-credito").textContent = formatBRL(kpis.totalProvisionadoC);
-  $("kpi-disp-sub").textContent = `Saldo disponível: ${formatBRL(kpis.totalDisponivelNcC)}`;
+  $("kpi-disp-sub").textContent =
+    `Saldo disponível: ${formatBRL(kpis.totalDisponivelNcC)}` +
+    (kpis.qtdNcsSigiloLgpd > 0 ? ` · ${kpis.qtdNcsSigiloLgpd} NC(s) CPF ocultas` : "");
   $("kpi-pdfs").textContent = `${kpis.qtdComPdf} / ${kpis.qtdTotal}`;
   $("kpi-base-meta").textContent = `Gerado em ${meta.gerado_em_br || "—"}`;
 }
@@ -413,7 +425,8 @@ function renderResults() {
 
   for (const item of slice) {
     const isNE = item._kind === "NE";
-    const mainDoc = (item.documentos || [])[0] || null;
+    const isLgpd = Boolean(item.sigilo_lgpd);
+    const mainDoc = !isLgpd ? (item.documentos || [])[0] || null : null;
     const hasDocs = Boolean(mainDoc);
     const badgeCls = statusBadgeClass(item);
 
@@ -423,7 +436,9 @@ function renderResults() {
       ? item.favorecido_nome || "—"
       : `${item.ug_emitente} · ${item.nome_emitente || "UG Emitente"}`;
     const entitySub = isNE
-      ? formatDocumento(item.favorecido_doc, item.favorecido_tipo, state.maskCpf)
+      ? isLgpd
+        ? "CPF Oculto (LGPD)"
+        : formatDocumento(item.favorecido_doc, item.favorecido_tipo, state.maskCpf)
       : `Favorece: ${(item.ugs_favorecidas || []).join(", ") || "BCMS"}`;
 
     const classMain = isNE
@@ -442,15 +457,18 @@ function renderResults() {
       ? item.situacao_rotulo
       : item.status_execucao || item.status || "Contabilizada";
     const valorFmt = isNE
-      ? formatBRL(item.valor_atual_c)
-      : formatBRL(item.valor_bcms_c);
-    const valorSub = isNE
+      ? formatValorLgpd(item.valor_atual_c, isLgpd)
+      : formatValorLgpd(item.valor_bcms_c, isLgpd);
+    const valorSub = isLgpd
+      ? "PDF restrito (LGPD)"
+      : isNE
       ? item.tem_processo
         ? "c/ Processo Escaneado"
         : item.tem_requisicao
         ? "c/ Requisição"
         : ""
       : `Disp.: ${formatBRL(item.valor_disponivel_c)}`;
+    const lgpdBadgeHtml = isLgpd ? ` <span class="badge badge-warn">Sigilo LGPD</span>` : "";
 
     tr.innerHTML = `
       <td>
@@ -461,7 +479,7 @@ function renderResults() {
       <td>
         <span class="badge ${isNE ? "badge-ne" : "badge-nc"}">${isNE ? "NE" : "NC"}</span>
         <button type="button" class="doc-key-btn" data-open-id="${escapeHtml(item.id)}">${escapeHtml(item.chave)}</button>
-        <span class="cell-sub mono">v${escapeHtml(item.versao || "000")} · ${escapeHtml(item.documentos?.length || 0)} arq.</span>
+        <span class="cell-sub mono">v${escapeHtml(item.versao || "000")} · ${isLgpd ? "oculto (LGPD)" : `${escapeHtml(item.documentos?.length || 0)} arq.`}</span>
       </td>
       <td>
         <span>${escapeHtml(item.data_emissao || "—")}</span>
@@ -476,7 +494,7 @@ function renderResults() {
         <span class="cell-sub">${escapeHtml(classSub)}</span>
       </td>
       <td>
-        <span class="badge ${badgeCls}">${escapeHtml(statusText)}</span>
+        <span class="badge ${badgeCls}">${escapeHtml(statusText)}</span>${lgpdBadgeHtml}
         <span class="cell-sub mono">${escapeHtml(linkText)}</span>
       </td>
       <td style="text-align:right;white-space:nowrap;">
@@ -490,7 +508,7 @@ function renderResults() {
           </button>
           <button type="button" class="icon-btn" data-dl-id="${escapeHtml(item.id)}" ${
             hasDocs ? "" : "disabled"
-          } title="${hasDocs ? "Baixar PDF oficial" : "PDF não disponível no acervo"}">
+          } title="${isLgpd ? "PDF ocultado pela LGPD (pagamento direto a militar)" : hasDocs ? "Baixar PDF oficial" : "PDF não disponível no acervo"}">
             PDF
           </button>
         </div>
@@ -513,7 +531,7 @@ function renderResults() {
       <div><strong>${escapeHtml(entityName)}</strong></div>
       <div class="m-card-meta">
         <span>${escapeHtml(classMain)}</span>
-        <span class="badge ${badgeCls}">${escapeHtml(statusText)}</span>
+        <span class="badge ${badgeCls}">${escapeHtml(statusText)}</span>${lgpdBadgeHtml}
       </div>
       <div class="m-card-actions">
         <button type="button" class="btn btn-sm btn-primary" data-open-id="${escapeHtml(item.id)}">Detalhes &amp; PDF</button>
@@ -665,7 +683,9 @@ function exportFilteredCsv() {
       it.data_emissao,
       isNE ? it.favorecido_nome : it.nome_emitente,
       isNE
-        ? formatDocumento(it.favorecido_doc, it.favorecido_tipo, state.maskCpf)
+        ? it.sigilo_lgpd
+          ? "OCULTO (LGPD)"
+          : formatDocumento(it.favorecido_doc, it.favorecido_tipo, state.maskCpf)
         : it.ug_emitente,
       isNE ? it.pi : (it.pis || []).join(" | "),
       isNE ? it.nd : (it.nds || []).join(" | "),
@@ -677,8 +697,8 @@ function exportFilteredCsv() {
       isNE ? it.modalidade : it.tipo_nc,
       isNE ? it.pregao : "",
       isNE ? it.situacao_rotulo : it.status_execucao || it.status,
-      formatBRL(isNE ? it.valor_atual_c : it.valor_bcms_c),
-      String((it.documentos || []).length),
+      formatValorLgpd(isNE ? it.valor_atual_c : it.valor_bcms_c, it.sigilo_lgpd),
+      it.sigilo_lgpd ? "Oculto (LGPD)" : String((it.documentos || []).length),
       it.descricao,
     ];
     rows.push(row.map(sanitizeCsvCell).join(";"));
@@ -702,7 +722,7 @@ async function openDocumentModal(item, triggerEl = null) {
   if (!item) return;
   if (triggerEl) state.lastTriggerEl = triggerEl;
   state.currentItem = item;
-  state.currentDocs = item.documentos || [];
+  state.currentDocs = item.sigilo_lgpd ? [] : item.documentos || [];
   state.currentDocIdx = 0;
 
   const isNE = item._kind === "NE";
@@ -712,10 +732,12 @@ async function openDocumentModal(item, triggerEl = null) {
 
   $("modal-title").textContent = item.chave;
   const badgeStatus = $("modal-badge-status");
-  badgeStatus.textContent = isNE
+  badgeStatus.textContent = item.sigilo_lgpd
+    ? "Sigilo LGPD"
+    : isNE
     ? item.situacao_rotulo
     : item.status_execucao || item.status || "Contabilizada";
-  badgeStatus.className = `badge ${statusBadgeClass(item)}`;
+  badgeStatus.className = `badge ${item.sigilo_lgpd ? "badge-warn" : statusBadgeClass(item)}`;
 
   renderModalDetails(item);
   renderPdfDocTabs();
@@ -731,7 +753,13 @@ async function openDocumentModal(item, triggerEl = null) {
     state.currentPdfResult = null;
     $("btn-pdf-download").disabled = true;
     $("btn-pdf-open-tab").disabled = true;
-    $("pdf-viewer-stage").innerHTML = `
+    $("pdf-viewer-stage").innerHTML = item.sigilo_lgpd
+      ? `
+      <div class="pdf-placeholder">
+        <strong>🔒 Documento Protegido (LGPD)</strong>
+        <span>Empenhos e créditos nominativos de pagamento direto a militares têm CPF, dados pessoais, valores e PDF ocultados.</span>
+      </div>`
+      : `
       <div class="pdf-placeholder">
         <strong>PDF Oficial ainda não disponível no acervo</strong>
         <span>Este registro existe na conciliação SIAFI/Tesouro Gerencial, mas o PDF correspondente ainda não foi extraído para a pasta de documentos.</span>
@@ -753,10 +781,13 @@ function closeDocumentModal() {
 function renderModalDetails(item) {
   const pane = $("modal-details-pane");
   if (item._kind === "NE") {
+    const isLgpd = Boolean(item.sigilo_lgpd);
     const ncMatches = item.nc_vinculada
       ? state.index.ncByChave.get(item.nc_vinculada) || []
       : [];
-    const docFav = formatDocumento(item.favorecido_doc, item.favorecido_tipo, state.maskCpf);
+    const docFav = isLgpd
+      ? "OCULTO (LGPD)"
+      : formatDocumento(item.favorecido_doc, item.favorecido_tipo, state.maskCpf);
 
     const itensHtml = (item.itens || []).length
       ? `
@@ -816,13 +847,13 @@ function renderModalDetails(item) {
       <div class="detail-section">
         <h3>Valores da Nota de Empenho</h3>
         <div class="kv-grid">
-          <div class="kv-item"><span>Valor Líquido Atual</span><strong class="mono" style="color:var(--accent-blue-text);font-size:var(--fs-md);">${escapeHtml(formatBRL(item.valor_atual_c))}</strong></div>
-          <div class="kv-item"><span>Incluído</span><strong class="mono">${escapeHtml(formatBRL(item.valor_incluido_c))}</strong></div>
-          <div class="kv-item"><span>Reforçado</span><strong class="mono">${escapeHtml(formatBRL(item.valor_reforcado_c))}</strong></div>
-          <div class="kv-item"><span>Anulado</span><strong class="mono">${escapeHtml(formatBRL(item.valor_anulado_c))}</strong></div>
+          <div class="kv-item"><span>Valor Líquido Atual</span><strong class="mono" style="color:var(--accent-blue-text);font-size:var(--fs-md);">${escapeHtml(formatValorLgpd(item.valor_atual_c, isLgpd))}</strong></div>
+          <div class="kv-item"><span>Incluído</span><strong class="mono">${escapeHtml(formatValorLgpd(item.valor_incluido_c, isLgpd))}</strong></div>
+          <div class="kv-item"><span>Reforçado</span><strong class="mono">${escapeHtml(formatValorLgpd(item.valor_reforcado_c, isLgpd))}</strong></div>
+          <div class="kv-item"><span>Anulado</span><strong class="mono">${escapeHtml(formatValorLgpd(item.valor_anulado_c, isLgpd))}</strong></div>
         </div>
         ${
-          item.cel_empenhado_c > 0
+          !isLgpd && item.cel_empenhado_c > 0
             ? `<div style="font-size:var(--fs-xs);color:var(--text-muted);border-top:1px solid var(--border-subtle);padding-top:8px;">
                 Execução consolidada da célula (${escapeHtml(item.pi)} · ${escapeHtml(item.nd)}):
                 Empenhado ${escapeHtml(formatBRL(item.cel_empenhado_c))} ·
@@ -840,7 +871,7 @@ function renderModalDetails(item) {
           <div class="kv-item"><span>Fonte / UGR</span><strong class="mono">${escapeHtml(item.fonte || "—")} · ${escapeHtml(item.ugr || "—")}</strong></div>
           <div class="kv-item"><span>Plano Interno (PI)</span><strong class="mono">${escapeHtml(item.pi || "—")}</strong><span style="font-size:11px;color:var(--text-muted);">${escapeHtml(item.pi_desc || "")}</span></div>
           <div class="kv-item"><span>Natureza (ND)</span><strong class="mono">${escapeHtml(item.nd || "—")}</strong><span style="font-size:11px;color:var(--text-muted);">${escapeHtml(item.nd_desc || "")}</span></div>
-          <div class="kv-item"><span>Ação / Processo (NUP)</span><strong class="mono">${escapeHtml(item.acao || "—")} · ${escapeHtml(item.processo_nup || "—")}</strong></div>
+          <div class="kv-item"><span>Ação / Processo (NUP)</span><strong class="mono">${escapeHtml(item.acao || "—")} · ${escapeHtml(isLgpd ? "Oculto (LGPD)" : item.processo_nup || "—")}</strong></div>
           <div class="kv-item"><span>Nota de Crédito (NC)</span>
             ${
               ncMatches.length
@@ -861,10 +892,10 @@ function renderModalDetails(item) {
         <h3>Descrição, Entrega e Responsáveis</h3>
         <p style="margin:0;font-size:var(--fs-sm);line-height:1.55;">${escapeHtml(item.descricao || "—")}</p>
         <div class="kv-grid">
-          <div class="kv-item"><span>Local de Entrega</span><strong>${escapeHtml(item.local_entrega || "—")}</strong></div>
-          <div class="kv-item"><span>Minuta / Amparo</span><strong>${escapeHtml(item.minuta || "—")} · ${escapeHtml(item.amparo || "")}</strong></div>
-          <div class="kv-item"><span>Ordenador de Despesa</span><strong>${escapeHtml(item.ordenador || "—")}</strong></div>
-          <div class="kv-item"><span>Responsável pela NE</span><strong>${escapeHtml(item.responsavel || "—")}</strong></div>
+          <div class="kv-item"><span>Local de Entrega</span><strong>${escapeHtml(isLgpd ? "Oculto (LGPD)" : item.local_entrega || "—")}</strong></div>
+          <div class="kv-item"><span>Minuta / Amparo</span><strong>${escapeHtml(isLgpd ? "Oculto (LGPD)" : item.minuta || "—")} · ${escapeHtml(item.amparo || "")}</strong></div>
+          <div class="kv-item"><span>Ordenador de Despesa</span><strong>${escapeHtml(isLgpd ? "Oculto (LGPD)" : item.ordenador || "—")}</strong></div>
+          <div class="kv-item"><span>Responsável pela NE</span><strong>${escapeHtml(isLgpd ? "Oculto (LGPD)" : item.responsavel || "—")}</strong></div>
         </div>
       </div>
 
@@ -872,6 +903,7 @@ function renderModalDetails(item) {
     `;
   } else {
     // NC Details
+    const isLgpdNc = Boolean(item.sigilo_lgpd);
     const linkedNes = (item.nes_vinculadas || [])
       .map((neId) => state.index.neMap.get(neId))
       .filter(Boolean);
@@ -902,14 +934,14 @@ function renderModalDetails(item) {
                           <span class="mono">PTRES ${escapeHtml(c.ptres)} · Fonte ${escapeHtml(c.fonte)} · UGR ${escapeHtml(c.ugr)}</span>
                           <div><strong>PI ${escapeHtml(c.pi || "—")}</strong> ${escapeHtml(c.pi_desc || "")} · <strong>ND ${escapeHtml(c.nd)}</strong> ${escapeHtml(c.nd_desc || "")}</div>
                         </td>
-                        <td class="mono" style="text-align:right;white-space:nowrap;"><strong>${escapeHtml(formatBRL(c.valor_c))}</strong></td>
+                        <td class="mono" style="text-align:right;white-space:nowrap;"><strong>${escapeHtml(formatValorLgpd(c.valor_c, isLgpdNc))}</strong></td>
                       </tr>`
                         )
                         .join("")
                     : `<tr>
                         <td class="mono">${escapeHtml(String(it.seq))} · ${escapeHtml(it.ug_favorecida)}</td>
                         <td>${escapeHtml(it.nome_favorecida)} (${escapeHtml(it.situacao)})</td>
-                        <td class="mono" style="text-align:right;"><strong>${escapeHtml(formatBRL(it.valor_c))}</strong></td>
+                        <td class="mono" style="text-align:right;"><strong>${escapeHtml(formatValorLgpd(it.valor_c, isLgpdNc))}</strong></td>
                       </tr>`
                 )
                 .join("")}
@@ -935,10 +967,10 @@ function renderModalDetails(item) {
       <div class="detail-section">
         <h3>Execução Financeira do Crédito (BCMS)</h3>
         <div class="kv-grid">
-          <div class="kv-item"><span>Valor no Documento</span><strong class="mono">${escapeHtml(formatBRL(item.valor_bcms_c))}</strong></div>
-          <div class="kv-item"><span>Provisionado Líquido</span><strong class="mono" style="color:var(--accent-blue-text);">${escapeHtml(formatBRL(item.valor_provisionado_c))}</strong></div>
-          <div class="kv-item"><span>Empenhado</span><strong class="mono">${escapeHtml(formatBRL(item.valor_empenhado_c))}</strong></div>
-          <div class="kv-item"><span>Saldo Disponível</span><strong class="mono" style="color:var(--accent-emerald-text);">${escapeHtml(formatBRL(item.valor_disponivel_c))}</strong></div>
+          <div class="kv-item"><span>Valor no Documento</span><strong class="mono">${escapeHtml(formatValorLgpd(item.valor_bcms_c, isLgpdNc))}</strong></div>
+          <div class="kv-item"><span>Provisionado Líquido</span><strong class="mono" style="color:var(--accent-blue-text);">${escapeHtml(formatValorLgpd(item.valor_provisionado_c, isLgpdNc))}</strong></div>
+          <div class="kv-item"><span>Empenhado</span><strong class="mono">${escapeHtml(formatValorLgpd(item.valor_empenhado_c, isLgpdNc))}</strong></div>
+          <div class="kv-item"><span>Saldo Disponível</span><strong class="mono" style="color:var(--accent-emerald-text);">${escapeHtml(formatValorLgpd(item.valor_disponivel_c, isLgpdNc))}</strong></div>
         </div>
       </div>
 
@@ -955,7 +987,7 @@ function renderModalDetails(item) {
             ? `<div class="link-pills">${linkedNes
                 .map(
                   (ne) =>
-                    `<button type="button" class="link-pill-btn" data-jump-id="${escapeHtml(ne.id)}">${escapeHtml(ne.chave)} · ${escapeHtml(formatBRL(ne.valor_atual_c))}</button>`
+                    `<button type="button" class="link-pill-btn" data-jump-id="${escapeHtml(ne.id)}">${escapeHtml(ne.chave)} · ${escapeHtml(formatValorLgpd(ne.valor_atual_c, ne.sigilo_lgpd))}</button>`
                 )
                 .join("")}</div>`
             : `<span style="font-size:var(--fs-xs);color:var(--text-muted);">Nenhuma NE do BCMS referencia diretamente esta NC no momento.</span>`
@@ -1045,17 +1077,6 @@ function wireEvents() {
   $("btn-theme").addEventListener("click", () => {
     const cur = document.documentElement.getAttribute("data-theme");
     setTheme(cur === "light" ? "dark" : "light");
-  });
-
-  $("btn-lgpd").addEventListener("click", () => {
-    state.maskCpf = !state.maskCpf;
-    const btn = $("btn-lgpd");
-    btn.setAttribute("aria-pressed", state.maskCpf ? "true" : "false");
-    btn.textContent = state.maskCpf ? "CPF Mascarado: ON" : "CPF Mascarado: OFF";
-    renderResults();
-    if (!$("doc-modal").classList.contains("hidden") && state.currentItem) {
-      renderModalDetails(state.currentItem);
-    }
   });
 
   $("tab-mode-apps").addEventListener("click", () => switchConnectMode("apps"));
@@ -1344,8 +1365,8 @@ function wireEvents() {
     if (!it) return;
     const isNE = it._kind === "NE";
     const summary = isNE
-      ? `${it.chave} | UG ${it.ug} | ${it.favorecido_nome} (${formatDocumento(it.favorecido_doc, it.favorecido_tipo, state.maskCpf)}) | PI ${it.pi} | ND ${it.nd} | NC ${it.nc_vinculada || "-"} | ${formatBRL(it.valor_atual_c)}`
-      : `${it.chave} | Emitente ${it.ug_emitente} (${it.nome_emitente}) | PI ${(it.pis || []).join(",")} | ND ${(it.nds || []).join(",")} | Valor ${formatBRL(it.valor_bcms_c)} | Disponível ${formatBRL(it.valor_disponivel_c)}`;
+      ? `${it.chave} | UG ${it.ug} | ${it.favorecido_nome} (${it.sigilo_lgpd ? "OCULTO (LGPD)" : formatDocumento(it.favorecido_doc, it.favorecido_tipo, state.maskCpf)}) | PI ${it.pi} | ND ${it.nd} | NC ${it.nc_vinculada || "-"} | ${formatValorLgpd(it.valor_atual_c, it.sigilo_lgpd)}`
+      : `${it.chave} | Emitente ${it.ug_emitente} (${it.nome_emitente}) | PI ${(it.pis || []).join(",")} | ND ${(it.nds || []).join(",")} | Valor ${formatValorLgpd(it.valor_bcms_c, it.sigilo_lgpd)} | Disponível ${formatValorLgpd(it.valor_disponivel_c, it.sigilo_lgpd)}`;
     try {
       await navigator.clipboard.writeText(summary);
       showToast("Resumo copiado para a área de transferência.");

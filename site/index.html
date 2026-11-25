@@ -29,9 +29,9 @@
           <span class="status-dot" aria-hidden="true"></span>
           <span id="conn-status-text">Desconectado do Drive</span>
         </span>
-        <button id="btn-lgpd" type="button" class="btn btn-sm" aria-pressed="true" title="Alternar ocultação parcial de CPFs na exibição">
-          CPF Mascarado: ON
-        </button>
+        <span id="lgpd-pill" class="status-pill" title="NEs e NCs de pagamento direto a militares têm CPF, dados pessoais, valores e PDFs ocultados na origem">
+          🔒 LGPD: Dados Militares Ocultos
+        </span>
         <button id="btn-theme" type="button" class="btn btn-sm" title="Alternar entre tema escuro e tema claro">
           Tema Claro
         </button>
@@ -325,6 +325,7 @@
                   <option value="com_processo">Com Processo Escaneado</option>
                   <option value="com_requisicao">Com Requisição (Inicial/Reforço/Anulação)</option>
                   <option value="com_saldo_nc">NC com Saldo Disponível &gt; R$ 0,00</option>
+                  <option value="sigilo_lgpd">Somente Registros em Sigilo LGPD</option>
                   <option value="sem_pdf">Sem PDF Oficial Extraído</option>
                 </select>
               </div>

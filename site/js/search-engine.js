@@ -52,10 +52,10 @@ export function buildSearchIndex(database) {
       _sortKey: ne.chave || "",
       _sortDate: ne.data_iso || "",
       _sortEntity: normalizarTexto(ne.favorecido_nome),
-      _sortVal: Number(ne.valor_atual_c || 0),
+      _sortVal: ne.sigilo_lgpd || ne.valor_atual_c === null ? null : Number(ne.valor_atual_c || 0),
       _searchBlob: normalizarTexto(docParts.join(" ")),
       _subNorm: (ne.subelementos || []).map((s) => normalizarTexto(s)),
-      _empresaKey: ne.favorecido_doc_limpo || normalizarTexto(ne.favorecido_nome),
+      _empresaKey: ne.sigilo_lgpd ? "" : (ne.favorecido_doc_limpo || normalizarTexto(ne.favorecido_nome)),
       _empresaSearch: normalizarTexto(
         `${ne.favorecido_nome} (${ne.favorecido_doc}) ${ne.favorecido_doc} ${ne.favorecido_doc_limpo}`
       ),
@@ -112,7 +112,9 @@ export function buildSearchIndex(database) {
       _sortKey: nc.chave || "",
       _sortDate: nc.data_iso || "",
       _sortEntity: normalizarTexto(nc.nome_emitente || nc.ug_emitente),
-      _sortVal: Number(nc.valor_bcms_c || nc.valor_total_c || 0),
+      _sortVal: nc.sigilo_lgpd || (nc.valor_bcms_c === null && nc.valor_total_c === null)
+        ? null
+        : Number(nc.valor_bcms_c || nc.valor_total_c || 0),
       _searchBlob: normalizarTexto(docParts.join(" ")),
     };
     ncById.set(item.id, item);
@@ -239,8 +241,9 @@ export function applyFilters(index, filters) {
       if (fMes && ne.mes !== fMes) continue;
       if (fDataDe && (!ne.data_iso || ne.data_iso < fDataDe)) continue;
       if (fDataAte && (!ne.data_iso || ne.data_iso > fDataAte)) continue;
-      if (minC !== null && ne.valor_atual_c < minC) continue;
-      if (maxC !== null && ne.valor_atual_c > maxC) continue;
+      if (minC !== null && (ne.sigilo_lgpd || ne.valor_atual_c === null || ne.valor_atual_c < minC)) continue;
+      if (maxC !== null && (ne.sigilo_lgpd || ne.valor_atual_c === null || ne.valor_atual_c > maxC)) continue;
+      if (fAnexo === "sigilo_lgpd" && !ne.sigilo_lgpd) continue;
       if (fAnexo === "com_pdf" && !ne.tem_pdf) continue;
       if (fAnexo === "sem_pdf" && ne.tem_pdf) continue;
       if (fAnexo === "com_processo" && !ne.tem_processo) continue;
@@ -276,11 +279,12 @@ export function applyFilters(index, filters) {
       if (fMes && nc.mes !== fMes) continue;
       if (fDataDe && (!nc.data_iso || nc.data_iso < fDataDe)) continue;
       if (fDataAte && (!nc.data_iso || nc.data_iso > fDataAte)) continue;
-      if (minC !== null && nc.valor_bcms_c < minC) continue;
-      if (maxC !== null && nc.valor_bcms_c > maxC) continue;
+      if (minC !== null && (nc.sigilo_lgpd || nc.valor_bcms_c === null || nc.valor_bcms_c < minC)) continue;
+      if (maxC !== null && (nc.sigilo_lgpd || nc.valor_bcms_c === null || nc.valor_bcms_c > maxC)) continue;
+      if (fAnexo === "sigilo_lgpd" && !nc.sigilo_lgpd) continue;
       if (fAnexo === "com_pdf" && !nc.tem_pdf) continue;
       if (fAnexo === "sem_pdf" && nc.tem_pdf) continue;
-      if (fAnexo === "com_saldo_nc" && nc.valor_disponivel_c <= 0) continue;
+      if (fAnexo === "com_saldo_nc" && (nc.sigilo_lgpd || nc.valor_disponivel_c === null || nc.valor_disponivel_c <= 0)) continue;
       matchedNcs.push(nc);
     }
   }
@@ -296,14 +300,28 @@ export function applyFilters(index, filters) {
 
   sortItems(items, filters.sort);
 
+  const qtdNesSigiloLgpd = matchedNes.filter((n) => n.sigilo_lgpd).length;
+  const qtdNcsSigiloLgpd = matchedNcs.filter((c) => c.sigilo_lgpd).length;
   const kpis = {
     qtdTotal: items.length,
     qtdNes: matchedNes.length,
     qtdNcs: matchedNcs.length,
-    qtdComPdf: items.filter((it) => it.tem_pdf || (it.documentos && it.documentos.length > 0)).length,
-    totalEmpenhadoC: matchedNes.reduce((acc, n) => acc + Number(n.valor_atual_c || 0), 0),
-    totalProvisionadoC: matchedNcs.reduce((acc, c) => acc + Number(c.valor_provisionado_c || 0), 0),
-    totalDisponivelNcC: matchedNcs.reduce((acc, c) => acc + Number(c.valor_disponivel_c || 0), 0),
+    qtdSigiloLgpd: qtdNesSigiloLgpd + qtdNcsSigiloLgpd,
+    qtdNesSigiloLgpd,
+    qtdNcsSigiloLgpd,
+    qtdComPdf: items.filter((it) => !it.sigilo_lgpd && (it.tem_pdf || (it.documentos && it.documentos.length > 0))).length,
+    totalEmpenhadoC: matchedNes.reduce(
+      (acc, n) => acc + (n.sigilo_lgpd || n.valor_atual_c === null ? 0 : Number(n.valor_atual_c || 0)),
+      0
+    ),
+    totalProvisionadoC: matchedNcs.reduce(
+      (acc, c) => acc + (c.sigilo_lgpd || c.valor_provisionado_c === null ? 0 : Number(c.valor_provisionado_c || 0)),
+      0
+    ),
+    totalDisponivelNcC: matchedNcs.reduce(
+      (acc, c) => acc + (c.sigilo_lgpd || c.valor_disponivel_c === null ? 0 : Number(c.valor_disponivel_c || 0)),
+      0
+    ),
     empresasUnicas: new Set(matchedNes.map((n) => n._empresaKey).filter(Boolean)).size,
   };
 
@@ -320,8 +338,18 @@ function sortItems(items, sortMode) {
       case "key_desc":
         return b._sortKey.localeCompare(a._sortKey);
       case "val_desc":
+        if (a._sortVal === null && b._sortVal === null) {
+          return (b._sortDate || "").localeCompare(a._sortDate || "") || b._sortKey.localeCompare(a._sortKey);
+        }
+        if (a._sortVal === null) return 1;
+        if (b._sortVal === null) return -1;
         return b._sortVal - a._sortVal || (b._sortDate || "").localeCompare(a._sortDate || "");
       case "val_asc":
+        if (a._sortVal === null && b._sortVal === null) {
+          return (b._sortDate || "").localeCompare(a._sortDate || "") || b._sortKey.localeCompare(a._sortKey);
+        }
+        if (a._sortVal === null) return 1;
+        if (b._sortVal === null) return -1;
         return a._sortVal - b._sortVal || (b._sortDate || "").localeCompare(a._sortDate || "");
       case "entity_asc":
         return (a._sortEntity || "").localeCompare(b._sortEntity || "") || a._sortKey.localeCompare(b._sortKey);

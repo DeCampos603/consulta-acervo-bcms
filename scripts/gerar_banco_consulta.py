@@ -113,6 +113,33 @@ def normalizar_tipo_empenho(valor: object) -> str:
     return TIPO_EMPENHO_MAP.get(s, s)
 
 
+def cpf_valido(digitos: str) -> bool:
+    """Valida os 2 dígitos verificadores de um CPF (11 dígitos), rejeitando sequências repetidas."""
+    dig = re.sub(r"\D", "", str(digitos or ""))
+    if len(dig) != 11 or len(set(dig)) == 1:
+        return False
+    soma1 = sum(int(dig[i]) * (10 - i) for i in range(9))
+    dv1 = ((soma1 * 10) % 11) % 10
+    if dv1 != int(dig[9]):
+        return False
+    soma2 = sum(int(dig[i]) * (11 - i) for i in range(10))
+    dv2 = ((soma2 * 10) % 11) % 10
+    return dv2 == int(dig[10])
+
+
+_RE_CPF_CANDIDATO = re.compile(r"(?<!\d)\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?!\d)")
+
+
+def texto_contem_cpf_valido(texto: str | None) -> bool:
+    """Retorna True se o texto contém pelo menos um número de CPF matematicamente válido."""
+    if not texto:
+        return False
+    for m in _RE_CPF_CANDIDATO.finditer(str(texto)):
+        if cpf_valido(m.group(0)):
+            return True
+    return False
+
+
 def classificar_favorecido_doc(raw: object) -> tuple[str, str, str]:
     """Retorna (tipo, somente_digitos, formatado)."""
     s = str(raw or "").strip()
@@ -478,6 +505,7 @@ def gerar_banco(
     # Montar registros consolidados de NEs
     nes_out: list[dict] = []
     nc_to_nes_keys: dict[str, list[str]] = defaultdict(list)
+    chaves_restritas_lgpd: set[str] = set()
 
     for key_ne in sorted(nes_raw.keys()):
         raw = nes_raw[key_ne]
@@ -549,10 +577,82 @@ def gerar_banco(
         data_iso = parse_data_iso(data_br)
         mes_ref = data_iso[5:7] if len(data_iso) >= 7 else ""
 
+        sigilo_lgpd = fav_doc_tipo == "CPF"
+        if sigilo_lgpd:
+            chaves_restritas_lgpd.add(uid)
+            nes_out.append(
+                {
+                    "id": uid,
+                    "tipo_doc": "NE",
+                    "sigilo_lgpd": True,
+                    "pdf_restrito_lgpd": True,
+                    "ug": ug,
+                    "ug_rotulo": UG_LABELS.get(ug, ug),
+                    "chave": chave,
+                    "numero": raw.get("numero"),
+                    "ano": raw.get("ano") or 2026,
+                    "versao": str(raw.get("versao") or "001").zfill(3),
+                    "versao_data_hora": raw.get("versao_data_hora") or "",
+                    "operacao_versao": raw.get("operacao_versao") or "",
+                    "data_emissao": data_br,
+                    "data_iso": data_iso,
+                    "mes": mes_ref,
+                    "tipo_empenho": normalizar_tipo_empenho(raw.get("tipo_empenho")),
+                    "situacao": raw.get("situacao") or "NORMAL",
+                    "situacao_rotulo": raw.get("situacao_rotulo") or "Empenho Inicial",
+                    "esfera": str(raw.get("esfera") or "").strip(),
+                    "ptres": str(raw.get("ptres") or "").strip(),
+                    "fonte": str(raw.get("fonte") or "").strip(),
+                    "nd": nd,
+                    "nd_desc": nd_desc,
+                    "ugr": str(raw.get("ugr") or "").strip(),
+                    "pi": pi,
+                    "pi_desc": pi_desc,
+                    "acao": acao,
+                    "processo_nup": "",
+                    "processo_licitatorio": proc_lic,
+                    "pregao": pregao,
+                    "uasg_pregao": str(deriv.get("uasg_pregao") or "").strip(),
+                    "papel_ug": str(deriv.get("papel") or "").strip(),
+                    "modalidade": str(raw.get("modalidade_licitacao") or "").strip(),
+                    "amparo": str(raw.get("amparo") or "").strip(),
+                    "minuta": "",
+                    "local_entrega": "",
+                    "ordenador": "",
+                    "responsavel": "",
+                    "favorecido_tipo": "CPF",
+                    "favorecido_doc": "OCULTO (LGPD)",
+                    "favorecido_doc_limpo": "",
+                    "favorecido_nome": "Pagamento Direto a Militar (Dados Ocultados · LGPD)",
+                    "nc_vinculada": nc_vinc,
+                    "prova_rastreabilidade": str(dash.get("prova") or "").strip(),
+                    "prova_slug": str(dash.get("prova_slug") or "").strip(),
+                    "valor_atual_c": None,
+                    "valor_incluido_c": None,
+                    "valor_reforcado_c": None,
+                    "valor_anulado_c": None,
+                    "cel_empenhado_c": None,
+                    "cel_liquidado_c": None,
+                    "cel_pago_c": None,
+                    "cel_pct_liquidado": None,
+                    "descricao": "Dados pessoais, favorecido, CPF e valores ocultados (LGPD — pagamento direto a militar).",
+                    "subelementos": [],
+                    "itens": [],
+                    "qtd_itens": 0,
+                    "documentos": [],
+                    "tem_pdf": False,
+                    "tem_processo": False,
+                    "tem_requisicao": False,
+                }
+            )
+            continue
+
         nes_out.append(
             {
                 "id": uid,
                 "tipo_doc": "NE",
+                "sigilo_lgpd": False,
+                "pdf_restrito_lgpd": False,
                 "ug": ug,
                 "ug_rotulo": UG_LABELS.get(ug, ug),
                 "chave": chave,
@@ -772,10 +872,38 @@ def gerar_banco(
         pis_list = sorted(pis_set)
         nds_list = sorted(nds_set)
 
+        descricao_raw = str(raw.get("descricao") or cred_info.get("obj") or "").strip()
+        sigilo_lgpd_nc = texto_contem_cpf_valido(descricao_raw)
+        if sigilo_lgpd_nc:
+            chaves_restritas_lgpd.add(uid)
+            for it in itens_bcms:
+                it["valor_c"] = None
+                for c in it.get("origem") or []:
+                    c["valor_c"] = None
+                for c in it.get("destino") or []:
+                    c["valor_c"] = None
+            documentos_nc: list[dict] = []
+            descricao_nc = "Dados pessoais, favorecido, CPF e valores ocultados (LGPD — crédito nominativo para pagamento direto a militar)."
+            val_total_out = None
+            val_bcms_out = None
+            val_prov_out = None
+            val_emp_out = None
+            val_disp_out = None
+        else:
+            documentos_nc = documentos
+            descricao_nc = descricao_raw
+            val_total_out = valor_total_c
+            val_bcms_out = valor_bcms_c
+            val_prov_out = valor_prov_c
+            val_emp_out = valor_emp_c
+            val_disp_out = valor_disp_c
+
         ncs_out.append(
             {
                 "id": uid,
                 "tipo_doc": "NC",
+                "sigilo_lgpd": sigilo_lgpd_nc,
+                "pdf_restrito_lgpd": sigilo_lgpd_nc,
                 "chave": chave,
                 "numero": raw.get("numero"),
                 "ano": raw.get("ano") or 2026,
@@ -801,18 +929,18 @@ def gerar_banco(
                 "ugrs": sorted(ugrs_set),
                 "pis": pis_list,
                 "pi_descs": {pi_c: pi_desc_map.get(pi_c, "") for pi_c in pis_list if pi_desc_map.get(pi_c)},
-                "valor_total_c": valor_total_c,
-                "valor_bcms_c": valor_bcms_c,
-                "valor_provisionado_c": valor_prov_c,
-                "valor_empenhado_c": valor_emp_c,
-                "valor_disponivel_c": valor_disp_c,
-                "descricao": str(raw.get("descricao") or cred_info.get("obj") or "").strip(),
+                "valor_total_c": val_total_out,
+                "valor_bcms_c": val_bcms_out,
+                "valor_provisionado_c": val_prov_out,
+                "valor_empenhado_c": val_emp_out,
+                "valor_disponivel_c": val_disp_out,
+                "descricao": descricao_nc,
                 "itens": itens_bcms,
                 "qtd_itens_total": len(raw.get("itens") or []),
                 "qtd_itens_bcms": len(itens_bcms),
                 "nes_vinculadas": nes_vinc,
-                "documentos": documentos,
-                "tem_pdf": bool(documentos),
+                "documentos": documentos_nc,
+                "tem_pdf": bool(documentos_nc),
             }
         )
 
@@ -822,26 +950,39 @@ def gerar_banco(
     agora = datetime.now()
     totais = {
         "qtd_nes": len(nes_out),
+        "qtd_nes_sigilo_lgpd": sum(1 for n in nes_out if n.get("sigilo_lgpd")),
         "qtd_nes_com_pdf": sum(1 for n in nes_out if n["tem_pdf"]),
         "qtd_nes_com_processo": sum(1 for n in nes_out if n["tem_processo"]),
         "qtd_nes_com_requisicao": sum(1 for n in nes_out if n["tem_requisicao"]),
         "qtd_ncs": len(ncs_out),
+        "qtd_ncs_sigilo_lgpd": sum(1 for c in ncs_out if c.get("sigilo_lgpd")),
         "qtd_ncs_com_pdf": sum(1 for c in ncs_out if c["tem_pdf"]),
         "qtd_empresas_unicas": len(filtros["empresas"]),
-        "total_empenhado_liquido_c": sum(n["valor_atual_c"] for n in nes_out),
-        "total_creditos_provisionados_c": sum(c["valor_provisionado_c"] for c in ncs_out),
-        "total_creditos_disponiveis_c": sum(c["valor_disponivel_c"] for c in ncs_out),
+        "total_empenhado_liquido_c": sum(
+            n["valor_atual_c"] for n in nes_out if not n.get("sigilo_lgpd") and n["valor_atual_c"] is not None
+        ),
+        "total_creditos_provisionados_c": sum(
+            c["valor_provisionado_c"]
+            for c in ncs_out
+            if not c.get("sigilo_lgpd") and c["valor_provisionado_c"] is not None
+        ),
+        "total_creditos_disponiveis_c": sum(
+            c["valor_disponivel_c"]
+            for c in ncs_out
+            if not c.get("sigilo_lgpd") and c["valor_disponivel_c"] is not None
+        ),
     }
 
     banco = {
         "meta": {
-            "versao_schema": "1.0.0",
+            "versao_schema": "1.1.0",
             "unidade": "Batalhão Central de Manutenção e Suprimento (BCMS)",
             "ugs": list(UGS_BCMS),
             "exercicio": 2026,
             "gerado_em_iso": agora.isoformat(timespec="seconds"),
             "gerado_em_br": agora.strftime("%d/%m/%Y %H:%M"),
             "posicao_credito": cred_raw_obj.get("posicao") or "",
+            "chaves_restritas_lgpd": sorted(chaves_restritas_lgpd),
             "totais": totais,
         },
         "filtros": filtros,
@@ -903,7 +1044,7 @@ def _construir_facetas(
 
     for n in nes:
         c_ug[n["ug"]] += 1
-        if n["favorecido_nome"]:
+        if n["favorecido_nome"] and not n.get("sigilo_lgpd"):
             chave_emp = n["favorecido_doc_limpo"] or n["favorecido_nome"]
             c_emp[chave_emp] += 1
             if n["favorecido_doc"]:

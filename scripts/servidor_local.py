@@ -12,6 +12,7 @@ import argparse
 import functools
 import json
 import mimetypes
+import re
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,9 +28,58 @@ PASTAS_PERMITIDAS = {
     "PROCESSOS ESCANEADOS 2026",
 }
 
+_RE_NE_CPF_NOME = re.compile(r"^NE_\d{6}_\d{4}NE\d{6}_v\d+_\d{11}_", re.I)
+_RE_UG_NE = re.compile(r"(160329|167329)_(\d{4}NE\d{6})", re.I)
+_RE_PROC = re.compile(r"^PROCESSOS ESCANEADOS 2026/(160|167)[^/]*/.*NE_(\d+)", re.I)
+_RE_NC_NOME = re.compile(r"^NC_(\d{6})_(\d{4}NC\d{6})_", re.I)
+_CACHE_RESTRITAS: dict[str, tuple[float, set[str]]] = {}
+
+
+def _carregar_chaves_restritas(acervo_dir: Path) -> set[str]:
+    banco = acervo_dir / "banco_consulta_bcms.json"
+    if not banco.is_file():
+        return set()
+    mtime = banco.stat().st_mtime
+    key = str(banco.resolve())
+    cached = _CACHE_RESTRITAS.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        data = json.loads(banco.read_text(encoding="utf-8"))
+        chaves = {
+            str(c).upper()
+            for c in ((data.get("meta") or {}).get("chaves_restritas_lgpd") or [])
+        }
+    except Exception:
+        chaves = set()
+    _CACHE_RESTRITAS[key] = (mtime, chaves)
+    return chaves
+
+
+def eh_pdf_restrito_lgpd(acervo_dir: Path, rel_posix: str, nome_arquivo: str) -> bool:
+    """Bloqueia qualquer PDF de pagamento direto a militar (CPF/LGPD)."""
+    if _RE_NE_CPF_NOME.match(nome_arquivo):
+        return True
+    restritas = _carregar_chaves_restritas(acervo_dir)
+    if not restritas:
+        return False
+    m_ne = _RE_UG_NE.search(f"{rel_posix} {nome_arquivo}")
+    if m_ne and f"{m_ne.group(1)}:{m_ne.group(2).upper()}" in restritas:
+        return True
+    m_proc = _RE_PROC.match(rel_posix)
+    if m_proc:
+        ug = f"{m_proc.group(1)}329"
+        chave = f"2026NE{int(m_proc.group(2)):06d}"
+        if f"{ug}:{chave}" in restritas:
+            return True
+    m_nc = _RE_NC_NOME.match(nome_arquivo)
+    if m_nc and f"{m_nc.group(1)}:{m_nc.group(2).upper()}" in restritas:
+        return True
+    return False
+
 
 def resolver_pdf_seguro(acervo_dir: Path, rel_path: str) -> Path | None:
-    """Resolve um caminho relativo garantindo confinamento estrito às subpastas permitidas."""
+    """Resolve um caminho relativo garantindo confinamento estrito às subpastas permitidas e bloqueio LGPD."""
     limpo = urllib.parse.unquote(rel_path or "").strip().lstrip("/\\")
     if not limpo or ".." in Path(limpo).parts:
         return None
@@ -41,6 +91,9 @@ def resolver_pdf_seguro(acervo_dir: Path, rel_path: str) -> Path | None:
     if not alvo.is_relative_to(raiz):
         return None
     if not alvo.is_file() or alvo.suffix.lower() != ".pdf":
+        return None
+    rel_posix = alvo.relative_to(raiz).as_posix()
+    if eh_pdf_restrito_lgpd(raiz, rel_posix, alvo.name):
         return None
     return alvo
 
