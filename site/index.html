@@ -201,8 +201,12 @@
             <button type="button" class="preset-btn" data-preset="com_requisicao">NEs c/ Requisição</button>
             <button type="button" class="preset-btn" data-preset="com_saldo_nc">NCs c/ Saldo Disponível</button>
             <button type="button" class="preset-btn" data-preset="anuladas">NEs Totalmente Anuladas</button>
+            <button id="btn-toggle-panel-filters" type="button" class="preset-btn preset-toggle-panel" aria-expanded="true" aria-controls="filters-collapsible">
+              Ocultar Filtros
+            </button>
           </div>
 
+          <div id="filters-collapsible" class="filters-collapsible">
           <!-- Filtros Principais -->
           <div class="filters-grid">
             <div class="field">
@@ -213,7 +217,7 @@
             </div>
 
             <div class="field">
-              <label for="flt-empresa">Empresa / Favorecido (Nome ou CNPJ/CPF)</label>
+              <label for="flt-empresa">Favorecido (NE) / Emitente (NC)</label>
               <input id="flt-empresa" type="text" list="dl-empresa" placeholder="Digite ou selecione...">
               <datalist id="dl-empresa"></datalist>
             </div>
@@ -331,6 +335,7 @@
               </div>
             </div>
           </details>
+          </div><!-- /#filters-collapsible -->
 
           <div class="filters-toolbar">
             <div id="active-chips" class="active-chips" aria-live="polite"></div>
@@ -373,16 +378,32 @@
             </div>
 
             <div class="results-actions">
-              <label for="sort-select" class="sr-only">Ordenar resultados</label>
-              <select id="sort-select" class="sort-select">
-                <option value="date_desc">Mais recentes primeiro</option>
-                <option value="date_asc">Mais antigos primeiro</option>
-                <option value="val_desc">Maior valor primeiro</option>
-                <option value="val_asc">Menor valor primeiro</option>
-                <option value="key_asc">Número crescente (NE/NC)</option>
-                <option value="key_desc">Número decrescente (NE/NC)</option>
-                <option value="entity_asc">Empresa / Emitente (A–Z)</option>
-              </select>
+              <div class="sort-control-group">
+                <label for="sort-select" class="toolbar-inline-label">Ordenar:</label>
+                <select id="sort-select" class="sort-select">
+                  <option value="date_desc">Data: Mais recentes</option>
+                  <option value="date_asc">Data: Mais antigos</option>
+                  <option value="val_desc">Valor: Maior primeiro</option>
+                  <option value="val_asc">Valor: Menor primeiro</option>
+                  <option value="key_asc">Nº NE/NC: Crescente</option>
+                  <option value="key_desc">Nº NE/NC: Decrescente</option>
+                  <option value="entity_asc">Favorecido/Emitente: A–Z</option>
+                  <option value="entity_desc">Favorecido/Emitente: Z–A</option>
+                  <option value="ug_asc">UG: 160329 → 167329</option>
+                  <option value="ug_desc">UG: 167329 → 160329</option>
+                  <option value="pi_asc">PI / ND: A–Z</option>
+                  <option value="pi_desc">PI / ND: Z–A</option>
+                  <option value="status_asc">Situação: A–Z</option>
+                  <option value="status_desc">Situação: Z–A</option>
+                  <option value="disp_desc">Saldo NC: Maior primeiro</option>
+                  <option value="disp_asc">Saldo NC: Menor primeiro</option>
+                </select>
+                <button id="btn-sort-dir" type="button" class="btn btn-sm btn-sort-dir" title="Inverter direção da ordenação (crescente/decrescente)" aria-label="Inverter direção da ordenação">↓</button>
+              </div>
+
+              <button id="btn-toggle-col-filters" type="button" class="btn btn-sm" aria-pressed="true" title="Mostrar ou ocultar filtros rápidos nas colunas da tabela">
+                Filtros na Tabela
+              </button>
 
               <button id="btn-download-zip" type="button" class="btn btn-sm btn-emerald" disabled>
                 Baixar Selecionados (.ZIP) <span id="selected-count-badge">(0)</span>
@@ -399,18 +420,80 @@
 
           <div class="table-scroll">
             <table class="data-table">
+              <colgroup>
+                <col class="col-check">
+                <col class="col-doc">
+                <col class="col-date">
+                <col class="col-entity">
+                <col class="col-class">
+                <col class="col-status">
+                <col class="col-val">
+                <col class="col-actions">
+              </colgroup>
               <thead>
-                <tr>
-                  <th style="width:40px;">
+                <tr class="table-sort-row">
+                  <th>
                     <input id="chk-select-all" class="row-check" type="checkbox" aria-label="Selecionar todos os documentos visíveis nesta página">
                   </th>
-                  <th>Documento</th>
-                  <th>Emissão / UG</th>
-                  <th>Favorecido (NE) ou Emitente (NC)</th>
-                  <th>Classificação (PI · ND · PTRES)</th>
-                  <th>Vínculo &amp; Situação</th>
-                  <th style="text-align:right;">Valor</th>
-                  <th style="width:170px;">Ações</th>
+                  <th scope="col" data-sort-col="key" aria-sort="none">
+                    <button type="button" class="th-sort-btn" data-sort-col="key" title="Ordenar por número do documento (NE/NC)">
+                      <span>Documento</span><span class="sort-ind" aria-hidden="true">⇅</span>
+                    </button>
+                  </th>
+                  <th scope="col" data-sort-col="date" aria-sort="descending">
+                    <button type="button" class="th-sort-btn" data-sort-col="date" title="Ordenar por data de emissão">
+                      <span>Emissão / UG</span><span class="sort-ind" aria-hidden="true">▼</span>
+                    </button>
+                  </th>
+                  <th scope="col" data-sort-col="entity" aria-sort="none">
+                    <button type="button" class="th-sort-btn" data-sort-col="entity" title="Ordenar por favorecido ou emitente">
+                      <span>Favorecido / Emitente</span><span class="sort-ind" aria-hidden="true">⇅</span>
+                    </button>
+                  </th>
+                  <th scope="col" data-sort-col="class" aria-sort="none">
+                    <button type="button" class="th-sort-btn" data-sort-col="class" title="Ordenar por Plano Interno / ND">
+                      <span>PI · ND · PTRES</span><span class="sort-ind" aria-hidden="true">⇅</span>
+                    </button>
+                  </th>
+                  <th scope="col" data-sort-col="status" aria-sort="none">
+                    <button type="button" class="th-sort-btn" data-sort-col="status" title="Ordenar por situação">
+                      <span>Situação / Vínculo</span><span class="sort-ind" aria-hidden="true">⇅</span>
+                    </button>
+                  </th>
+                  <th scope="col" class="th-right" data-sort-col="val" aria-sort="none">
+                    <button type="button" class="th-sort-btn" data-sort-col="val" title="Ordenar por valor">
+                      <span>Valor</span><span class="sort-ind" aria-hidden="true">⇅</span>
+                    </button>
+                  </th>
+                  <th scope="col">Ações</th>
+                </tr>
+                <tr id="table-filter-row" class="table-filter-row">
+                  <th aria-hidden="true" class="col-flt-icon">⧩</th>
+                  <th>
+                    <input id="col-flt-doc" class="col-filter-input" type="search" placeholder="NE / NC..." aria-label="Filtrar coluna Documento">
+                  </th>
+                  <th>
+                    <select id="col-flt-ug" class="col-filter-select" aria-label="Filtrar coluna UG">
+                      <option value="">UG</option>
+                    </select>
+                  </th>
+                  <th>
+                    <input id="col-flt-entity" class="col-filter-input" type="search" list="dl-empresa" placeholder="Empresa / Emitente..." aria-label="Filtrar coluna Favorecido ou Emitente">
+                  </th>
+                  <th>
+                    <input id="col-flt-class" class="col-filter-input" type="search" placeholder="PI, ND, PTRES..." aria-label="Filtrar coluna PI, ND e PTRES">
+                  </th>
+                  <th>
+                    <select id="col-flt-situacao" class="col-filter-select" aria-label="Filtrar coluna Situação">
+                      <option value="">Situação</option>
+                    </select>
+                  </th>
+                  <th>
+                    <input id="col-flt-valmin" class="col-filter-input col-filter-num" type="text" inputmode="decimal" placeholder="Mín R$" aria-label="Filtrar valor mínimo em reais">
+                  </th>
+                  <th>
+                    <button id="btn-col-clear" type="button" class="col-filter-clear" disabled title="Limpar filtros ativos">Limpar</button>
+                  </th>
                 </tr>
               </thead>
               <tbody id="results-tbody"></tbody>

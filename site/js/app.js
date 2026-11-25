@@ -198,6 +198,24 @@ function populateFacetControls(f) {
   ];
   fillSelect("flt-situacao", sitList, "Todas as situações");
 
+  // Seletores compactos diretamente no cabeçalho da tabela
+  const colUg = $("col-flt-ug");
+  colUg.innerHTML = '<option value="">UG</option>';
+  for (const item of f.ugs || []) {
+    const opt = document.createElement("option");
+    opt.value = item.valor;
+    opt.textContent = item.valor;
+    colUg.appendChild(opt);
+  }
+  const colSit = $("col-flt-situacao");
+  colSit.innerHTML = '<option value="">Situação</option>';
+  for (const item of sitList) {
+    const opt = document.createElement("option");
+    opt.value = item.valor;
+    opt.textContent = item.rotulo;
+    colSit.appendChild(opt);
+  }
+
   fillDatalist("dl-empresa", f.empresas, true);
   fillDatalist("dl-nc", f.ncs, false);
   fillDatalist("dl-pi", f.pis, true);
@@ -209,6 +227,61 @@ function populateFacetControls(f) {
   fillDatalist("dl-emitente", f.ug_emitentes, true);
   fillDatalist("dl-pregao", f.pregoes, false);
   fillDatalist("dl-subelemento", f.subelementos, false);
+}
+
+const SORT_COL_DEFAULTS = {
+  key: ["key_asc", "key_desc"],
+  date: ["date_desc", "date_asc"],
+  entity: ["entity_asc", "entity_desc"],
+  class: ["pi_asc", "pi_desc"],
+  status: ["status_asc", "status_desc"],
+  val: ["val_desc", "val_asc"],
+};
+
+const SORT_COL_AXIS = {
+  key: ["key_asc", "key_desc"],
+  date: ["date_asc", "date_desc"],
+  entity: ["entity_asc", "entity_desc"],
+  class: ["pi_asc", "pi_desc"],
+  status: ["status_asc", "status_desc"],
+  val: ["val_asc", "val_desc"],
+};
+
+function updateSortIndicators() {
+  const sort = state.filters.sort || "date_desc";
+  document.querySelectorAll("thead th[data-sort-col]").forEach((th) => {
+    const col = th.dataset.sortCol;
+    const axis = SORT_COL_AXIS[col];
+    const ind = th.querySelector(".sort-ind");
+    if (axis && sort === axis[0]) {
+      th.setAttribute("aria-sort", "ascending");
+      if (ind) ind.textContent = "▲";
+    } else if (axis && sort === axis[1]) {
+      th.setAttribute("aria-sort", "descending");
+      if (ind) ind.textContent = "▼";
+    } else {
+      th.setAttribute("aria-sort", "none");
+      if (ind) ind.textContent = "⇅";
+    }
+  });
+  const btnDir = $("btn-sort-dir");
+  if (btnDir) {
+    const isAsc = sort.endsWith("_asc");
+    btnDir.textContent = isAsc ? "↑" : "↓";
+    btnDir.title = isAsc
+      ? "Ordem crescente — clique para alternar para decrescente"
+      : "Ordem decrescente — clique para alternar para crescente";
+  }
+}
+
+function syncColumnMirrorsFromFilters() {
+  const f = state.filters;
+  $("col-flt-doc").value = f.documento;
+  $("col-flt-ug").value = f.ug;
+  $("col-flt-entity").value = f.empresa;
+  $("col-flt-class").value = f.classificacao;
+  $("col-flt-situacao").value = f.situacao;
+  $("col-flt-valmin").value = f.valMinReais;
 }
 
 function syncControlsFromFilters() {
@@ -237,6 +310,8 @@ function syncControlsFromFilters() {
   $("flt-val-max").value = f.valMaxReais;
   $("flt-anexo").value = f.anexoFiltro;
   $("sort-select").value = f.sort;
+  syncColumnMirrorsFromFilters();
+  updateSortIndicators();
 
   document.querySelectorAll(".view-btn").forEach((b) => {
     b.classList.toggle("is-active", b.dataset.view === f.view);
@@ -269,6 +344,8 @@ function readFiltersFromControls() {
   f.valMaxReais = $("flt-val-max").value;
   f.anexoFiltro = $("flt-anexo").value;
   f.sort = $("sort-select").value;
+  syncColumnMirrorsFromFilters();
+  updateSortIndicators();
 }
 
 function recomputeAndRender() {
@@ -310,14 +387,27 @@ function renderKPIs() {
   $("kpi-base-meta").textContent = `Gerado em ${meta.gerado_em_br || "—"}`;
 }
 
+function updatePanelToggleLabel(activeCount) {
+  const panelBtn = $("btn-toggle-panel-filters");
+  const panelBody = $("filters-collapsible");
+  if (!panelBtn || !panelBody) return;
+  const collapsed = panelBody.classList.contains("is-collapsed");
+  panelBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  panelBtn.textContent = collapsed
+    ? `Mostrar Filtros${activeCount > 0 ? ` (${activeCount})` : ""}`
+    : "Ocultar Filtros";
+}
+
 function renderActiveChips() {
   const labels = [
     ["query", "Busca"],
+    ["documento", "Documento"],
     ["ug", "UG"],
-    ["empresa", "Empresa"],
+    ["empresa", "Favorecido/Emitente"],
     ["nc", "NC"],
     ["pi", "PI"],
     ["nd", "ND"],
+    ["classificacao", "Classificação"],
     ["situacao", "Situação"],
     ["ptres", "PTRES"],
     ["fonte", "Fonte"],
@@ -362,6 +452,9 @@ function renderActiveChips() {
   }
 
   $("btn-reset-filters").classList.toggle("hidden", count === 0);
+  const colClear = $("btn-col-clear");
+  if (colClear) colClear.disabled = count === 0;
+  updatePanelToggleLabel(count);
 }
 
 function statusBadgeClass(item) {
@@ -497,7 +590,7 @@ function renderResults() {
         <span class="badge ${badgeCls}">${escapeHtml(statusText)}</span>${lgpdBadgeHtml}
         <span class="cell-sub mono">${escapeHtml(linkText)}</span>
       </td>
-      <td style="text-align:right;white-space:nowrap;">
+      <td class="cell-val">
         <strong class="mono">${escapeHtml(valorFmt)}</strong>
         ${valorSub ? `<span class="cell-sub mono">${escapeHtml(valorSub)}</span>` : ""}
       </td>
@@ -1265,6 +1358,72 @@ function wireEvents() {
   };
   $("btn-reset-filters").addEventListener("click", resetAll);
   $("btn-empty-reset").addEventListener("click", resetAll);
+  $("btn-col-clear").addEventListener("click", resetAll);
+
+  // Ordenação clicável nas colunas da tabela e inversor de direção
+  document.querySelectorAll(".th-sort-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const pair = SORT_COL_DEFAULTS[btn.dataset.sortCol];
+      if (!pair) return;
+      state.filters.sort = state.filters.sort === pair[0] ? pair[1] : pair[0];
+      state.page = 1;
+      syncControlsFromFilters();
+      recomputeAndRender();
+    });
+  });
+
+  $("btn-sort-dir").addEventListener("click", () => {
+    const cur = state.filters.sort || "date_desc";
+    if (cur.endsWith("_desc")) {
+      state.filters.sort = cur.replace(/_desc$/, "_asc");
+    } else if (cur.endsWith("_asc")) {
+      state.filters.sort = cur.replace(/_asc$/, "_desc");
+    }
+    state.page = 1;
+    syncControlsFromFilters();
+    recomputeAndRender();
+  });
+
+  // Filtros inline nas colunas da tabela (espelhados em tempo real com os filtros superiores)
+  let colTimer = null;
+  const bindColInput = (colId, filterKey, mirrorTopId = null, immediate = false) => {
+    const el = $(colId);
+    if (!el) return;
+    const applyCol = () => {
+      state.filters[filterKey] = el.value;
+      if (mirrorTopId && $(mirrorTopId)) {
+        $(mirrorTopId).value = el.value;
+      }
+      state.page = 1;
+      recomputeAndRender();
+    };
+    el.addEventListener(immediate ? "change" : "input", () => {
+      clearTimeout(colTimer);
+      if (immediate) applyCol();
+      else colTimer = setTimeout(applyCol, 140);
+    });
+  };
+
+  bindColInput("col-flt-doc", "documento");
+  bindColInput("col-flt-ug", "ug", "flt-ug", true);
+  bindColInput("col-flt-entity", "empresa", "flt-empresa");
+  bindColInput("col-flt-class", "classificacao");
+  bindColInput("col-flt-situacao", "situacao", "flt-situacao", true);
+  bindColInput("col-flt-valmin", "valMinReais", "flt-val-min");
+
+  $("btn-toggle-col-filters").addEventListener("click", () => {
+    const row = $("table-filter-row");
+    const btn = $("btn-toggle-col-filters");
+    const hidden = row.classList.toggle("hidden");
+    btn.setAttribute("aria-pressed", hidden ? "false" : "true");
+    btn.textContent = hidden ? "Mostrar Filtros Tabela" : "Filtros na Tabela";
+  });
+
+  $("btn-toggle-panel-filters").addEventListener("click", () => {
+    $("filters-collapsible").classList.toggle("is-collapsed");
+    const activeCount = $("active-chips").children.length;
+    updatePanelToggleLabel(activeCount);
+  });
 
   // Paginação
   $("page-size-select").addEventListener("change", () => {

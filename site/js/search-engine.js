@@ -53,7 +53,12 @@ export function buildSearchIndex(database) {
       _sortDate: ne.data_iso || "",
       _sortEntity: normalizarTexto(ne.favorecido_nome),
       _sortVal: ne.sigilo_lgpd || ne.valor_atual_c === null ? null : Number(ne.valor_atual_c || 0),
+      _sortUg: ne.ug || "",
+      _sortClass: normalizarTexto(`${ne.pi || ""} ${ne.nd || ""} ${ne.ptres || ""}`),
+      _sortStatus: normalizarTexto(ne.situacao_rotulo || ""),
+      _sortDisp: null,
       _searchBlob: normalizarTexto(docParts.join(" ")),
+      _docSearch: normalizarTexto(`${ne.chave || ""} ${ne.numero || ""} ${String(ne.numero || "").padStart(6, "0")} ${ne.ug || ""}`),
       _subNorm: (ne.subelementos || []).map((s) => normalizarTexto(s)),
       _empresaKey: ne.sigilo_lgpd ? "" : (ne.favorecido_doc_limpo || normalizarTexto(ne.favorecido_nome)),
       _empresaSearch: normalizarTexto(
@@ -61,6 +66,7 @@ export function buildSearchIndex(database) {
       ),
       _piSearch: normalizarTexto(`${ne.pi} ${ne.pi_desc}`),
       _ndSearch: normalizarTexto(`${ne.nd} ${ne.nd_desc}`),
+      _classSearch: normalizarTexto(`${ne.pi || ""} ${ne.pi_desc || ""} ${ne.nd || ""} ${ne.nd_desc || ""} ${ne.ptres || ""} ${ne.fonte || ""} ${ne.acao || ""} ${ne.ugr || ""}`),
     };
     neMap.set(item.id, item);
     return item;
@@ -115,7 +121,16 @@ export function buildSearchIndex(database) {
       _sortVal: nc.sigilo_lgpd || (nc.valor_bcms_c === null && nc.valor_total_c === null)
         ? null
         : Number(nc.valor_bcms_c || nc.valor_total_c || 0),
+      _sortUg: nc.ug_principal || (nc.ugs_favorecidas || [])[0] || "",
+      _sortClass: normalizarTexto(`${(nc.pis || []).join(" ")} ${(nc.nds || []).join(" ")} ${(nc.ptres || []).join(" ")}`),
+      _sortStatus: normalizarTexto(nc.status_execucao || nc.status || ""),
+      _sortDisp: nc.sigilo_lgpd || nc.valor_disponivel_c === null ? null : Number(nc.valor_disponivel_c || 0),
       _searchBlob: normalizarTexto(docParts.join(" ")),
+      _docSearch: normalizarTexto(`${nc.chave || ""} ${nc.numero || ""} ${nc.ug_emitente || ""}`),
+      _emitenteSearch: normalizarTexto(`${nc.ug_emitente || ""} ${nc.nome_emitente || ""}`),
+      _classSearch: normalizarTexto(
+        `${(nc.pis || []).join(" ")} ${piDescsTxt} ${(nc.nds || []).join(" ")} ${ndDescsTxt} ${(nc.ptres || []).join(" ")} ${(nc.fontes || []).join(" ")} ${nc.acao || ""} ${(nc.ugrs || []).join(" ")}`
+      ),
     };
     ncById.set(item.id, item);
     if (!ncByChave.has(item.chave)) ncByChave.set(item.chave, []);
@@ -130,11 +145,13 @@ export function createDefaultFilters() {
   return {
     query: "",
     view: "todos", // todos | ne | nc
+    documento: "",
     ug: "",
     empresa: "",
     nc: "",
     pi: "",
     nd: "",
+    classificacao: "",
     situacao: "",
     ptres: "",
     fonte: "",
@@ -150,7 +167,7 @@ export function createDefaultFilters() {
     dataAte: "",
     valMinReais: "",
     valMaxReais: "",
-    anexoFiltro: "", // com_pdf | com_processo | com_requisicao | com_saldo_nc | sem_pdf
+    anexoFiltro: "", // com_pdf | com_processo | com_requisicao | com_saldo_nc | sigilo_lgpd | sem_pdf
     sort: "date_desc",
   };
 }
@@ -175,12 +192,14 @@ export function applyFilters(index, filters) {
     .split(" ")
     .filter(Boolean);
 
+  const fDoc = normalizarTexto(filters.documento);
   const fUg = filters.ug.trim();
   const fEmpNorm = normalizarTexto(filters.empresa);
   const fEmpDig = filters.empresa.replace(/\D/g, "");
   const fNc = extractLeadingToken(filters.nc).toUpperCase();
   const fPi = extractLeadingToken(filters.pi).toUpperCase();
   const fNd = extractLeadingToken(filters.nd);
+  const fClassTokens = normalizarTexto(filters.classificacao).split(" ").filter(Boolean);
   const fSit = normalizarTexto(filters.situacao);
   const fPtres = filters.ptres.trim().toUpperCase();
   const fFonte = filters.fonte.trim().toUpperCase();
@@ -199,7 +218,7 @@ export function applyFilters(index, filters) {
   const fAnexo = filters.anexoFiltro;
 
   const hasNeOnlyFilters = Boolean(
-    fEmpNorm || fMod || fTipoEmp || fPregao || fSub || fAnexo === "com_processo" || fAnexo === "com_requisicao"
+    fMod || fTipoEmp || fPregao || fSub || fAnexo === "com_processo" || fAnexo === "com_requisicao"
   );
   const hasNcOnlyFilters = Boolean(fEmit || fAnexo === "com_saldo_nc");
 
@@ -214,6 +233,7 @@ export function applyFilters(index, filters) {
   if (filters.view !== "nc" && !hasNcOnlyFilters) {
     for (const ne of index.empenhos) {
       if (tokens.length && !matchTokens(ne._searchBlob)) continue;
+      if (fDoc && !ne._docSearch.includes(fDoc)) continue;
       if (fUg && ne.ug !== fUg) continue;
       if (fEmpNorm) {
         const matchDig = fEmpDig.length >= 6 && ne.favorecido_doc_limpo.includes(fEmpDig);
@@ -229,6 +249,7 @@ export function applyFilters(index, filters) {
         const fNdNorm = normalizarTexto(fNd);
         if (!ne.nd.startsWith(fNd) && !ne._ndSearch.includes(fNdNorm)) continue;
       }
+      if (fClassTokens.length && !fClassTokens.every((t) => ne._classSearch.includes(t))) continue;
       if (fSit && normalizarTexto(ne.situacao_rotulo) !== fSit) continue;
       if (fPtres && ne.ptres.toUpperCase() !== fPtres) continue;
       if (fFonte && ne.fonte.toUpperCase() !== fFonte) continue;
@@ -256,7 +277,9 @@ export function applyFilters(index, filters) {
   if (filters.view !== "ne" && !hasNeOnlyFilters) {
     for (const nc of index.creditos) {
       if (tokens.length && !matchTokens(nc._searchBlob)) continue;
+      if (fDoc && !nc._docSearch.includes(fDoc)) continue;
       if (fUg && !(nc.ugs_favorecidas || []).includes(fUg)) continue;
+      if (fEmpNorm && !nc._emitenteSearch.includes(fEmpNorm)) continue;
       if (fNc && !nc.chave.toUpperCase().includes(fNc)) continue;
       if (fPi) {
         const fPiNorm = normalizarTexto(fPi);
@@ -270,6 +293,7 @@ export function applyFilters(index, filters) {
           Object.values(nc.nd_descs || {}).some((d) => normalizarTexto(d).includes(fNdNorm));
         if (!ndMatch) continue;
       }
+      if (fClassTokens.length && !fClassTokens.every((t) => nc._classSearch.includes(t))) continue;
       if (fSit && normalizarTexto(nc.status) !== fSit && normalizarTexto(nc.status_execucao) !== fSit) continue;
       if (fPtres && !(nc.ptres || []).some((p) => p.toUpperCase() === fPtres)) continue;
       if (fFonte && !(nc.fontes || []).some((f) => f.toUpperCase() === fFonte)) continue;
@@ -328,31 +352,49 @@ export function applyFilters(index, filters) {
   return { items, matchedNes, matchedNcs, kpis };
 }
 
+function compareNullableNum(aVal, bVal, a, b, desc) {
+  if (aVal === null && bVal === null) {
+    return (b._sortDate || "").localeCompare(a._sortDate || "") || b._sortKey.localeCompare(a._sortKey);
+  }
+  if (aVal === null) return 1;
+  if (bVal === null) return -1;
+  const diff = desc ? bVal - aVal : aVal - bVal;
+  return diff || (b._sortDate || "").localeCompare(a._sortDate || "") || b._sortKey.localeCompare(a._sortKey);
+}
+
 function sortItems(items, sortMode) {
   items.sort((a, b) => {
     switch (sortMode) {
       case "date_asc":
         return (a._sortDate || "").localeCompare(b._sortDate || "") || a._sortKey.localeCompare(b._sortKey);
       case "key_asc":
-        return a._sortKey.localeCompare(b._sortKey);
+        return a._sortKey.localeCompare(b._sortKey) || (a._sortUg || "").localeCompare(b._sortUg || "");
       case "key_desc":
-        return b._sortKey.localeCompare(a._sortKey);
+        return b._sortKey.localeCompare(a._sortKey) || (b._sortUg || "").localeCompare(a._sortUg || "");
       case "val_desc":
-        if (a._sortVal === null && b._sortVal === null) {
-          return (b._sortDate || "").localeCompare(a._sortDate || "") || b._sortKey.localeCompare(a._sortKey);
-        }
-        if (a._sortVal === null) return 1;
-        if (b._sortVal === null) return -1;
-        return b._sortVal - a._sortVal || (b._sortDate || "").localeCompare(a._sortDate || "");
+        return compareNullableNum(a._sortVal, b._sortVal, a, b, true);
       case "val_asc":
-        if (a._sortVal === null && b._sortVal === null) {
-          return (b._sortDate || "").localeCompare(a._sortDate || "") || b._sortKey.localeCompare(a._sortKey);
-        }
-        if (a._sortVal === null) return 1;
-        if (b._sortVal === null) return -1;
-        return a._sortVal - b._sortVal || (b._sortDate || "").localeCompare(a._sortDate || "");
+        return compareNullableNum(a._sortVal, b._sortVal, a, b, false);
+      case "disp_desc":
+        return compareNullableNum(a._sortDisp, b._sortDisp, a, b, true);
+      case "disp_asc":
+        return compareNullableNum(a._sortDisp, b._sortDisp, a, b, false);
       case "entity_asc":
         return (a._sortEntity || "").localeCompare(b._sortEntity || "") || a._sortKey.localeCompare(b._sortKey);
+      case "entity_desc":
+        return (b._sortEntity || "").localeCompare(a._sortEntity || "") || b._sortKey.localeCompare(a._sortKey);
+      case "ug_asc":
+        return (a._sortUg || "").localeCompare(b._sortUg || "") || (b._sortDate || "").localeCompare(a._sortDate || "");
+      case "ug_desc":
+        return (b._sortUg || "").localeCompare(a._sortUg || "") || (b._sortDate || "").localeCompare(a._sortDate || "");
+      case "pi_asc":
+        return (a._sortClass || "").localeCompare(b._sortClass || "") || a._sortKey.localeCompare(b._sortKey);
+      case "pi_desc":
+        return (b._sortClass || "").localeCompare(a._sortClass || "") || b._sortKey.localeCompare(a._sortKey);
+      case "status_asc":
+        return (a._sortStatus || "").localeCompare(b._sortStatus || "") || a._sortKey.localeCompare(b._sortKey);
+      case "status_desc":
+        return (b._sortStatus || "").localeCompare(a._sortStatus || "") || b._sortKey.localeCompare(a._sortKey);
       case "date_desc":
       default:
         return (b._sortDate || "").localeCompare(a._sortDate || "") || b._sortKey.localeCompare(a._sortKey);
