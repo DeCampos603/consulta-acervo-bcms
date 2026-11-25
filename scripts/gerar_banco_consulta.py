@@ -25,12 +25,15 @@ import os
 import re
 import shutil
 import sys
+import urllib.request
 from collections import Counter, defaultdict
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJETO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = PROJETO_ROOT.parent
+DEFAULT_ENV_PATH = PROJETO_ROOT / ".env"
 DEFAULT_ACERVO = REPO_ROOT / "Acervo-Empenhos-BCMS-2026"
 DEFAULT_REQ_PROJETO = REPO_ROOT / "Requisicoes-Empenho-BCMS"
 DEFAULT_REQ_DADOS = DEFAULT_REQ_PROJETO / "dados"
@@ -984,6 +987,48 @@ def _construir_facetas(
     }
 
 
+def carregar_env_local(env_path: Path | None = None) -> dict[str, str]:
+    """Lê pares CHAVE=VALOR do arquivo .env local, mantendo prioridade para os.environ."""
+    caminho = Path(env_path) if env_path is not None else DEFAULT_ENV_PATH
+    valores: dict[str, str] = {}
+    if caminho.is_file():
+        for linha_bruta in caminho.read_text(encoding="utf-8").splitlines():
+            linha = linha_bruta.strip()
+            if not linha or linha.startswith("#") or "=" not in linha:
+                continue
+            chave, _, valor = linha.partition("=")
+            chave = chave.strip()
+            valor = valor.strip().strip('"').strip("'")
+            if chave:
+                valores[chave] = valor
+    for k in ("APPS_SCRIPT_URL", "APPS_SCRIPT_TOKEN"):
+        if os.environ.get(k):
+            valores[k] = os.environ[k].strip()
+    return valores
+
+
+def notificar_ponte_apps_script(env_path: Path | None = None, timeout: int = 90) -> dict:
+    """Solicita rebuild_map na ponte Google Apps Script (fail-safe: nunca derruba o build)."""
+    env = carregar_env_local(env_path)
+    url = env.get("APPS_SCRIPT_URL", "").strip()
+    token = env.get("APPS_SCRIPT_TOKEN", "").strip()
+    if not url or not token:
+        return {"ok": False, "ignorado": True, "motivo": "credenciais ausentes"}
+
+    payload = json.dumps({"action": "rebuild_map", "token": token}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "text/plain;charset=utf-8"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        return {"ok": False, "erro": str(exc)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Gera banco_consulta_bcms.json diretamente na pasta do Google Drive."
@@ -994,6 +1039,11 @@ def main() -> int:
     parser.add_argument("--saida", type=Path, default=DEFAULT_SAIDA)
     parser.add_argument("--reler-pdfs", action="store_true", help="Força releitura de todos os PDFs")
     parser.add_argument("--nao-copiar-ncs", action="store_true", help="Não copia NCs faltantes")
+    parser.add_argument(
+        "--sem-rebuild-drive",
+        action="store_true",
+        help="Não notifica a ponte Google Apps Script após gerar o banco",
+    )
     args = parser.parse_args()
 
     banco = gerar_banco(
@@ -1012,6 +1062,17 @@ def main() -> int:
         f"Req={t['qtd_nes_com_requisicao']}) | NCs={t['qtd_ncs']} (PDF={t['qtd_ncs_com_pdf']}) | "
         f"Empresas={t['qtd_empresas_unicas']}"
     )
+    if not args.sem_rebuild_drive:
+        ponte = notificar_ponte_apps_script()
+        if ponte.get("ok"):
+            print(
+                f"[Drive] Mapa da ponte Apps Script atualizado: "
+                f"{ponte.get('arquivos_mapeados')} PDF(s)."
+            )
+        elif ponte.get("ignorado"):
+            print("[Drive] Rebuild da ponte ignorado (credenciais .env não configuradas).")
+        else:
+            print(f"[Aviso] Ponte Apps Script não respondeu: {ponte.get('erro')}")
     return 0
 
 

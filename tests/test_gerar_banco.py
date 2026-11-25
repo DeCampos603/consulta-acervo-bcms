@@ -19,8 +19,10 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from gerar_banco_consulta import (  # noqa: E402
+    carregar_env_local,
     classificar_favorecido_doc,
     normalizar_tipo_empenho,
+    notificar_ponte_apps_script,
     parse_data_iso,
     to_centavos,
 )
@@ -116,3 +118,49 @@ def test_resolver_pdf_seguro_bloqueia_traversal():
     p_nc = resolver_pdf_seguro(ACERVO, nc_com_pdf["documentos"][0]["caminho_relativo"])
     assert p_ne is not None and p_ne.read_bytes().startswith(b"%PDF-")
     assert p_nc is not None and p_nc.read_bytes().startswith(b"%PDF-")
+
+
+def test_env_e_notificar_ponte_apps_script(tmp_path, monkeypatch):
+    monkeypatch.delenv("APPS_SCRIPT_URL", raising=False)
+    monkeypatch.delenv("APPS_SCRIPT_TOKEN", raising=False)
+
+    env_vazio = tmp_path / "vazio.env"
+    env_vazio.write_text("# comentario\n", encoding="utf-8")
+    assert carregar_env_local(env_vazio) == {}
+    res_ausente = notificar_ponte_apps_script(env_vazio)
+    assert res_ausente["ok"] is False and res_ausente["ignorado"] is True
+
+    env_ok = tmp_path / "ok.env"
+    env_ok.write_text(
+        'APPS_SCRIPT_URL="https://script.google.com/macros/s/test/exec"\n'
+        "APPS_SCRIPT_TOKEN=tok123\n",
+        encoding="utf-8",
+    )
+    loaded = carregar_env_local(env_ok)
+    assert loaded == {
+        "APPS_SCRIPT_URL": "https://script.google.com/macros/s/test/exec",
+        "APPS_SCRIPT_TOKEN": "tok123",
+    }
+
+    class _FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"ok": true, "arquivos_mapeados": 1286}'
+
+    captured = {}
+
+    def _fake_urlopen(req, timeout=0):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResp()
+
+    monkeypatch.setattr("gerar_banco_consulta.urllib.request.urlopen", _fake_urlopen)
+    res_ok = notificar_ponte_apps_script(env_ok)
+    assert res_ok["ok"] is True and res_ok["arquivos_mapeados"] == 1286
+    assert captured["url"] == "https://script.google.com/macros/s/test/exec"
+    assert captured["body"] == {"action": "rebuild_map", "token": "tok123"}
